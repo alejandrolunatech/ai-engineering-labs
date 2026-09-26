@@ -77,17 +77,18 @@
       "required_concept_groups": [
         [
           "none",
-          "null"
+          "null",
+          "nullable"
         ],
         [
           "manager",
           "manager.email"
         ],
         [
-          "attributeerror",
-          "dereference",
-          "runtime failure",
-          "runtime error"
+          "crash",
+          "fail",
+          "dereferenc",
+          "runtime"
         ]
       ],
       "forbidden_finding_terms": [
