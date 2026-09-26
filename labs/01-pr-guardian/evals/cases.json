@@ -20,13 +20,14 @@
           "attempt"
         ],
         [
-        "duplicate charge",
-        "duplicate charges",
-        "double charge",
-        "multiple charges",
-        "charged twice",
-        "deduplicate",
-        "new charge"
+          "duplicate charge",
+          "duplicate charges",
+          "double charge",
+          "multiple charges",
+          "charged twice",
+          "charged multiple times",
+          "deduplicate",
+          "new charge"
         ]
       ],
       "forbidden_finding_terms": [
