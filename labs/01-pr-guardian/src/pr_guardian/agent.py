@@ -4,8 +4,8 @@ import os
 
 from agents import Agent
 
-from pr_guardian.models import ReviewResult
-from pr_guardian.tools import REVIEW_TOOLS, ReviewContext
+from .models import ReviewResult
+from .tools import REVIEW_TOOLS, ReviewContext
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 

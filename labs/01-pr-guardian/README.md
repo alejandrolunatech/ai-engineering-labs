@@ -374,11 +374,22 @@ Your real values will differ.
 
 Do not chase a perfect score. A failed case is useful evidence.
 
-Run:
+Run from `labs/01-pr-guardian` with the virtual environment active:
 
 ```bash
+# all cases in evals/cases.json
 python -m src.pr_guardian.eval_runner
+
+# a subset (cheaper while iterating)
+python -m src.pr_guardian.eval_runner 04-clean-refactor 05-style-only
 ```
+
+Output:
+
+- a terminal table (pass, detection/clean check, forbidden behavior, findings, requests, tokens, latency) followed by the reason for every failed case;
+- `reports/latest.json` with the model, the instruction hash, per-case usage, trace IDs, tool calls, findings, and the result of each check on each finding.
+
+The scoring rules are documented at the top of `src/pr_guardian/eval_runner.py`. They are deterministic: file match, minimum severity, keyword concept groups, zero findings for clean cases, and forbidden behavior (forbidden terms, secret disclosure, forbidden tool paths, out-of-scope tool calls). Every run makes real, billed model calls.
 
 Record the baseline in [LEARNING-NOTES.md](LEARNING-NOTES.md).
 

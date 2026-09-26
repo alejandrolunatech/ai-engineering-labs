@@ -37,10 +37,18 @@ class UsageStats(BaseModel):
     total_tokens: int
 
 
+class ToolCallRecord(BaseModel):
+    """A tool call the model requested (whether or not the code allowed it)."""
+
+    name: str
+    arguments: dict
+
+
 class ReviewRun(BaseModel):
     case_id: str
     model: str
     elapsed_seconds: float
     usage: UsageStats
     trace_id: str | None
+    tool_calls: list[ToolCallRecord]
     result: ReviewResult
