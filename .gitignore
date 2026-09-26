@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+.DS_Store
+.idea/
+.vscode/
+reports/*.json
+coverage.xml
+htmlcov/
+.coverage
