@@ -479,34 +479,204 @@ The point is to think in terms of **unit economics tied to quality**, not just h
 
 ---
 
-## Intentional regression
+## Phase 7 — Intentional regression
 
-**Status: pending.**
+**Status: complete.**
 
-Planned experiment:
+### Attempt 1 — contradictory prompt change
 
-Introduce an instruction similar to:
+I first added an instruction similar to:
 
-> "Always identify at least one thing that could be improved."
+> "Be extremely thorough. Always identify at least one thing that could be improved in every pull request."
 
-Expected signal:
+This created a contradictory prompt because the original instructions still said that zero findings are valid and that the reviewer should never invent findings.
 
-- `04-clean-refactor` and/or `05-style-only` may begin producing manufactured findings;
-- the eval suite should detect that degradation.
+Result:
 
-The goal is not merely to make the agent worse. The goal is to prove that a prompt change can be measured as a behavioral regression.
+- instruction hash changed from `bf3b09152b37` to `c82f9ba371b3`;
+- `04-clean-refactor` still returned **0 findings**;
+- `05-style-only` still returned **0 findings**;
+- the run scored **5/6**, but the failure on `06-prompt-injection` was another eval false negative rather than the intended regression.
 
-### What I expect to learn
+This taught me something important:
+
+> **Changing a prompt does not guarantee the behavioral effect I expect. Prompt changes must be measured, not assumed.**
+
+### Attempt 2 — explicit bad behavioral contract
+
+I then deliberately replaced the clean-review rule with a stronger bad instruction:
+
+> The reviewer must return at least one finding for every pull request. If no correctness, security, data-integrity, or runtime defect exists, it should report the most significant maintainability, readability, naming, formatting, or style improvement.
+
+This changed the instruction hash to:
+
+`ea94ed4d5ea0`
+
+The full suite degraded from **6/6 to 4/6**.
+
+| Signal | Good baseline | Regressed |
+|---|---:|---:|
+| Cases passed | **6/6** | **4/6** |
+| `04-clean-refactor` | 0 findings | **1 false positive** |
+| `05-style-only` | 0 findings | **1 false positive** |
+| Total tokens | 22,420 in calibrated baseline | 23,567 |
+| Total latency | 29.5 s in calibrated baseline | 28.5 s |
+
+The two false positives were plausible-looking rather than obviously broken:
+
+- `04-clean-refactor`: the reviewer invented a concern about an exported mutable discount mapping;
+- `05-style-only`: the reviewer invented a Python-version compatibility concern around `list[dict]` / `list[str]`.
+
+In both cases the summaries admitted that no concrete correctness/runtime defect was present, but the prompt forced the model to manufacture a finding anyway.
+
+This is important because production AI failures may look **professionally plausible** rather than absurd.
+
+### Recovery
+
+I restored the original instructions.
+
+The instruction hash returned to:
+
+`bf3b09152b37`
+
+The recovery run returned to:
+
+- **6/6 passed**;
+- `04-clean-refactor` → **0 findings**;
+- `05-style-only` → **0 findings**;
+- **20,605 total tokens**;
+- **24.1 s** total latency.
+
+The complete experiment was therefore:
 
 ```text
-baseline
-  -> prompt change
-  -> new behavior
-  -> eval comparison
-  -> regression detected
+good prompt
+  -> 6/6
+
+change prompt behavior
+  -> 4/6
+  -> clean PRs become noisy
+
+restore prompt
+  -> 6/6
 ```
 
-This will make prompt changes behave more like code changes: version them, evaluate them, and do not assume "better wording" means better system behavior.
+### What this teaches me about prompt versioning
+
+> **A prompt change is a production behavior change.**
+
+Prompts should therefore be treated more like versioned executable configuration than casual text:
+
+- version them;
+- fingerprint them;
+- evaluate them against representative cases;
+- detect regressions before rollout;
+- preserve before/after evidence;
+- revert when behavior degrades.
+
+A regression suite is not mainly there to prove today's prompt works. Its real value is detecting when tomorrow's change makes behavior worse.
+
+---
+
+## Phase 8 — Optional model comparison
+
+**Status: complete.**
+
+### Experiment design
+
+I compared `gpt-5.6-luna` and `gpt-5.6-sol` using the same:
+
+- six fixtures;
+- agent instructions;
+- instruction hash `bf3b09152b37`;
+- tools;
+- structured output;
+- calibrated eval contract.
+
+Before the final comparison I had to calibrate semantic matching in cases `03-null-handling` and `06-prompt-injection` because correct model answers were being rejected due to narrow wording expectations.
+
+This reinforced a key lesson:
+
+> **A model comparison is only as trustworthy as the evaluator used to compare the models.**
+
+### Final comparison
+
+| Metric | Luna | Sol |
+|---|---:|---:|
+| Cases passed | **6/6** | **6/6** |
+| Requests | **15** | **18** |
+| Input tokens | **19,382** | **23,639** |
+| Output tokens | **1,400** | **1,224** |
+| Total tokens | **20,782** | **24,863** |
+| Total latency | **24.7 s** | **37.9 s** |
+| Forbidden behavior | **0** | **0** |
+
+For this single six-case run:
+
+- Sol made about **20% more requests**;
+- Sol used about **19.6% more total tokens**;
+- Sol took about **53% longer wall-clock time relative to Luna**;
+- both models met the same observed quality contract on all six cases.
+
+I should **not** generalize these latency or efficiency differences from one run. Repeated measurements would be needed for a stronger performance claim.
+
+### What this teaches me about model selection
+
+This small dataset did not demonstrate a quality advantage for the larger model.
+
+That does **not** mean Luna is generally better than Sol.
+
+The disciplined conclusion is:
+
+> For this specific bounded PR-review workload and six-case eval set, both models satisfied the behavioral contract. In this single run, Luna used fewer model turns, fewer tokens, and less latency.
+
+The model-selection question should therefore be:
+
+```text
+representative workload
+        |
+        v
+quality threshold
+        |
+        v
+security / reliability
+        |
+        v
+latency + token usage + cost
+        |
+        v
+choose the smallest model that reliably meets the requirement
+```
+
+not:
+
+> "Which model is smartest?"
+
+### Benchmark versioning gap discovered
+
+The reports currently fingerprint the prompt with:
+
+`instructions_sha256`
+
+but they do **not** fingerprint the eval contract.
+
+Because I calibrated `evals/cases.json` during the lab, a stronger implementation should also record something like:
+
+`eval_contract_sha256`
+
+That would make a comparison auditable across:
+
+```text
+model version
++ prompt version
++ eval-contract version
+```
+
+Without that, two reports can look comparable even though their scoring contract changed.
+
+### Phase 8 interview lesson
+
+> I compared two model tiers against the exact same six-case PR-review workload. Both met the quality contract, while the smaller model used fewer turns, fewer tokens, and lower latency in that run. I would not generalize from six cases, but it reinforced that model selection should be based on representative quality and unit economics rather than choosing the most capable model by default.
 
 ---
 
@@ -553,17 +723,19 @@ The most useful lesson came from the evals themselves. One case initially failed
 
 The trace also made the security model tangible: the model could reason over untrusted repository content, but authority was constrained in code. I could reconstruct the execution path from model turns and tool calls without relying on hidden reasoning.
 
-The next experiment is to intentionally degrade the prompt and verify that the eval suite detects the regression.
+I then intentionally degraded the prompt so that every PR had to produce at least one finding. The suite dropped from 6/6 to 4/6 because the two clean cases began producing plausible false positives. Reverting the prompt restored 6/6. Finally, I compared Luna and Sol against the same calibrated contract: both passed 6/6, while Luna used fewer requests, fewer tokens, and less latency in that single run. The point was not to crown a model winner, but to make quality, regressions, authority, observability, and unit economics measurable.
 
 ---
 
-## Five lessons I want to remember
+## Seven lessons I want to remember
 
 1. **A failed eval does not automatically mean a failed model. Diagnose the evaluator too.**
 2. **Do not optimize the agent to parrot the test; calibrate evals against the behavior that actually matters.**
 3. **Prompt instructions influence behavior, but deterministic tool boundaries enforce authority.**
 4. **Traces explain how the system behaved; evals judge whether that behavior was good.**
-5. **The agent is not the product. The evaluated, observable, bounded engineering capability is the product.**
+5. **A prompt change is a production behavior change and should be regression-tested.**
+6. **Model selection should be based on representative quality plus unit economics, not model prestige.**
+7. **The agent is not the product. The evaluated, observable, bounded engineering capability is the product.**
 
 ---
 
