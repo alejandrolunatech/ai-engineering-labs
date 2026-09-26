@@ -349,6 +349,136 @@ Even if future model behavior is imperfect, the deterministic authority boundary
 
 ---
 
+## Phase 6 — Usage and cost
+
+### Baseline usage
+
+The calibrated six-case baseline recorded:
+
+| Metric | Value |
+|---|---:|
+| Model | `gpt-5.6-luna` |
+| Requests | **16** |
+| Input tokens | **20,993** |
+| Output tokens | **1,427** |
+| Total tokens | **22,420** |
+| Total latency | **29.5 s** |
+| Successful reviews | **6/6** |
+
+### Approximate cost calculation
+
+For this learning calculation I used the current API prices available at the time of the lab:
+
+- input: **$0.20 / 1M tokens**
+- output: **$1.20 / 1M tokens**
+
+The calculation is:
+
+```text
+input_cost
+= 20,993 / 1,000,000 × $0.20
+= $0.0041986
+
+output_cost
+= 1,427 / 1,000,000 × $1.20
+= $0.0017124
+
+estimated_total_cost
+= $0.0041986 + $0.0017124
+= $0.005911
+```
+
+So the complete six-case baseline cost approximately:
+
+> **$0.0059 in model-token cost — about six-tenths of one US cent.**
+
+### Cost per successful review
+
+A more useful metric than raw token cost is the cost of a review that meets the quality contract:
+
+```text
+cost_per_successful_review
+= $0.005911 / 6
+= $0.000985
+```
+
+So for this small synthetic workload:
+
+> **Approximate cost per successful review: $0.001, or about one-tenth of a cent.**
+
+### What this teaches me
+
+Token count is an operational metric, not a business outcome.
+
+A cheaper reviewer that creates many false positives or misses important defects can have worse economics than a slightly more expensive reviewer with better quality.
+
+The useful relationship is closer to:
+
+```text
+quality
++ false-positive rate
++ miss rate
++ latency
++ token usage
++ cost per successful review
+```
+
+rather than simply:
+
+```text
+lowest token cost wins
+```
+
+A useful principle to remember:
+
+> **Cost should be connected to quality, not viewed in isolation.**
+
+### Why I should not hard-code pricing in the agent
+
+Pricing is external configuration and can change over time.
+
+The agent should record usage facts such as:
+
+- input tokens;
+- output tokens;
+- total tokens;
+- requests;
+- latency.
+
+Then a separate reporting or FinOps layer can apply current pricing.
+
+This keeps the core capability stable even when model pricing changes.
+
+### Important limitation of this estimate
+
+The current lab aggregates input and output token usage, but it does not separately calculate cached versus uncached input pricing.
+
+So this is an approximation, not an invoice reconciliation.
+
+For a production system I would want cost telemetry that distinguishes:
+
+- uncached input tokens;
+- cached input tokens;
+- output tokens;
+- model/version;
+- cost per review;
+- cost per successful review;
+- cost by team/repository/workload.
+
+### Scale thought experiment
+
+If — purely as an illustration — the exact same tiny workload cost remained about **$0.000985 per successful review**, then 10,000 reviews would be roughly:
+
+```text
+10,000 × $0.000985 ≈ $9.85
+```
+
+That is **not a production forecast**. Real enterprise PRs will vary in repository size, retrieved context, model turns, model choice, caching, and failure/retry behavior.
+
+The point is to think in terms of **unit economics tied to quality**, not just headline model pricing.
+
+---
+
 ## Intentional regression
 
 **Status: pending.**
