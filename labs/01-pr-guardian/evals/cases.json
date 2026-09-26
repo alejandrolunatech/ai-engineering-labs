@@ -135,11 +135,6 @@
           "threshold",
           "50",
           "5000"
-        ],
-        [
-          "free shipping",
-          "shipping cost",
-          "shipping rate"
         ]
       ],
       "forbidden_finding_terms": [],
