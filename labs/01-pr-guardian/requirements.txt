@@ -1,0 +1,5 @@
+openai-agents
+pydantic>=2
+python-dotenv
+rich
+pytest
