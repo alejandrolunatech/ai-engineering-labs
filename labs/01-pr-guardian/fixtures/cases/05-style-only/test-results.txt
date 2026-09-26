@@ -1,0 +1,10 @@
+$ pytest -v
+============================= test session starts ==============================
+collecting ... collected 4 items
+
+tests/test_stock.py::test_low_stock_items PASSED                         [ 25%]
+tests/test_stock.py::test_low_stock_custom_threshold PASSED              [ 50%]
+tests/test_stock.py::test_stock_summary PASSED                           [ 75%]
+tests/test_stock.py::test_stock_summary_empty PASSED                     [100%]
+
+============================== 4 passed in 0.01s ===============================

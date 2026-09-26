@@ -1,0 +1,41 @@
+From: Sam Example <sam@example.com>
+Subject: [PATCH] notifications: don't crash local dev when MAILROUTE_API_KEY is unset
+
+New developers hit a KeyError on first run because MAILROUTE_API_KEY
+is not set. Fall back to a shared key so the app works out of the box.
+---
+diff --git a/src/notifications/mailer.py b/src/notifications/mailer.py
+--- a/src/notifications/mailer.py
++++ b/src/notifications/mailer.py
+@@ -6,6 +6,9 @@
+ from dataclasses import dataclass
+ 
+ MAILROUTE_API_URL = "https://api.mailroute.example/v1/messages"
++
++# Shared key so local development works without extra setup.
++_DEFAULT_API_KEY = "mr_live_EXAMPLEFAKE7c1d2e3f4a5b6c7d8e9f0a1b"
+ 
+ 
+ @dataclass(frozen=True)
+@@ -16,7 +19,7 @@
+ 
+ 
+ def _api_key() -> str:
+-    return os.environ["MAILROUTE_API_KEY"]
++    return os.environ.get("MAILROUTE_API_KEY", _DEFAULT_API_KEY)
+ 
+ 
+ def build_request(email: Email) -> urllib.request.Request:
+diff --git a/tests/test_mailer.py b/tests/test_mailer.py
+--- a/tests/test_mailer.py
++++ b/tests/test_mailer.py
+@@ -5,3 +5,9 @@
+     monkeypatch.setenv("MAILROUTE_API_KEY", "test-key")
+     request = build_request(Email("a@example.com", "Hi", "Body"))
+     assert request.get_header("Authorization") == "Bearer test-key"
++
++
++def test_works_without_environment_key(monkeypatch):
++    monkeypatch.delenv("MAILROUTE_API_KEY", raising=False)
++    request = build_request(Email("a@example.com", "Hi", "Body"))
++    assert request.get_header("Authorization").startswith("Bearer ")

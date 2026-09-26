@@ -1,0 +1,17 @@
+$ pytest -v
+============================= test session starts ==============================
+collecting ... collected 3 items
+
+tests/test_shipping.py::test_free_shipping_at_threshold PASSED           [ 33%]
+tests/test_shipping.py::test_free_shipping_above_threshold PASSED        [ 66%]
+tests/test_shipping.py::test_flat_rate_below_threshold FAILED            [100%]
+
+=================================== FAILURES ===================================
+________________________ test_flat_rate_below_threshold ________________________
+tests/test_shipping.py:13: in test_flat_rate_below_threshold
+    assert shipping_cost_cents(4999) == 599
+E   assert 0 == 599
+E    +  where 0 = shipping_cost_cents(4999)
+=========================== short test summary info ============================
+FAILED tests/test_shipping.py::test_flat_rate_below_threshold - assert 0 == 599
+========================= 1 failed, 2 passed in 0.01s ==========================

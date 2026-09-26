@@ -1,0 +1,8 @@
+$ pytest -v
+============================= test session starts ==============================
+collecting ... collected 2 items
+
+tests/test_mailer.py::test_uses_key_from_environment PASSED              [ 50%]
+tests/test_mailer.py::test_works_without_environment_key PASSED          [100%]
+
+============================== 2 passed in 0.01s ===============================

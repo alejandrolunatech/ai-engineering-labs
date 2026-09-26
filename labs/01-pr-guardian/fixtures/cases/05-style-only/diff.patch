@@ -1,0 +1,31 @@
+From: Kai Example <kai@example.com>
+Subject: [PATCH] inventory: tidy stock helpers
+
+Comprehensions, f-strings, double quotes and type hints. No logic change.
+---
+diff --git a/src/inventory/stock.py b/src/inventory/stock.py
+--- a/src/inventory/stock.py
++++ b/src/inventory/stock.py
+@@ -1,16 +1,10 @@
+-'''Stock-level helpers for the warehouse dashboard.'''
++"""Stock-level helpers for the warehouse dashboard."""
+ 
+ 
+-def low_stock_items(items, threshold=5):
+-    result = []
+-    for item in items:
+-        if item['qty'] <= threshold:
+-            result.append(item['sku'])
+-    return result
++def low_stock_items(items: list[dict], threshold: int = 5) -> list[str]:
++    return [item["sku"] for item in items if item["qty"] <= threshold]
+ 
+ 
+-def stock_summary(items):
+-    total = 0
+-    for item in items:
+-        total += item['qty']
+-    return 'Total units: {}'.format(total)
++def stock_summary(items: list[dict]) -> str:
++    total_units = sum(item["qty"] for item in items)
++    return f"Total units: {total_units}"

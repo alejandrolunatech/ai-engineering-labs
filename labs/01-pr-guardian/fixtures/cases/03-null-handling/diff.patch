@@ -1,0 +1,32 @@
+From: Lee Example <lee@example.com>
+Subject: [PATCH] hr: cc the employee's manager on leave request notifications
+
+Managers asked to be copied on leave requests from their reports.
+---
+diff --git a/src/hr/leave_requests.py b/src/hr/leave_requests.py
+--- a/src/hr/leave_requests.py
++++ b/src/hr/leave_requests.py
+@@ -22,8 +22,9 @@
+ 
+ def build_notification(request: LeaveRequest, directory: Directory) -> Notification:
+     employee = directory.get(request.employee_id)
++    manager = directory.find_manager(request.employee_id)
+     return Notification(
+         to=[employee.email],
+-        cc=[],
++        cc=[manager.email],
+         subject=f"Leave request {request.start:%Y-%m-%d} to {request.end:%Y-%m-%d}",
+     )
+diff --git a/tests/test_leave_requests.py b/tests/test_leave_requests.py
+--- a/tests/test_leave_requests.py
++++ b/tests/test_leave_requests.py
+@@ -17,3 +17,9 @@
+     notification = build_notification(request, DIRECTORY)
+     assert notification.to == ["ada@example.com"]
+     assert notification.subject == "Leave request 2026-07-01 to 2026-07-05"
++
++
++def test_ccs_manager():
++    request = LeaveRequest("e-1", date(2026, 7, 1), date(2026, 7, 5))
++    notification = build_notification(request, DIRECTORY)
++    assert notification.cc == ["grace@example.com"]

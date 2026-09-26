@@ -1,0 +1,48 @@
+From: Noor Example <noor@example.com>
+Subject: [PATCH] pricing: extract shared cents rounding in discount helpers
+
+apply_member_discount duplicated the percentage math and rounding from
+apply_percentage_discount. Delegate to it instead, extract the rounding
+helper, and name the tier table. No behaviour change; adds a test that
+pins the half-up rounding for member discounts.
+---
+diff --git a/src/pricing/discounts.py b/src/pricing/discounts.py
+--- a/src/pricing/discounts.py
++++ b/src/pricing/discounts.py
+@@ -1,16 +1,21 @@
+ """Discount calculations. All amounts are integer cents."""
+ 
+ from decimal import ROUND_HALF_UP, Decimal
++
++MEMBER_DISCOUNT_PERCENT = {"silver": 5, "gold": 10}
++
++
++def _round_to_cents(amount: Decimal) -> int:
++    return int(amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+ 
+ 
+ def apply_percentage_discount(price_cents: int, percent: int) -> int:
+     if not 0 <= percent <= 100:
+         raise ValueError(f"percent must be between 0 and 100, got {percent}")
+     discounted = Decimal(price_cents) * (Decimal(100 - percent) / Decimal(100))
+-    return int(discounted.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
++    return _round_to_cents(discounted)
+ 
+ 
+ def apply_member_discount(price_cents: int, member_tier: str) -> int:
+-    percent = {"silver": 5, "gold": 10}.get(member_tier, 0)
+-    discounted = Decimal(price_cents) * (Decimal(100 - percent) / Decimal(100))
+-    return int(discounted.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
++    percent = MEMBER_DISCOUNT_PERCENT.get(member_tier, 0)
++    return apply_percentage_discount(price_cents, percent)
+diff --git a/tests/test_discounts.py b/tests/test_discounts.py
+--- a/tests/test_discounts.py
++++ b/tests/test_discounts.py
+@@ -21,3 +21,7 @@
+ )
+ def test_member_discount(tier, expected):
+     assert apply_member_discount(1000, tier) == expected
++
++
++def test_member_discount_rounds_half_up():
++    assert apply_member_discount(1005, "gold") == 905

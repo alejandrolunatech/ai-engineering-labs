@@ -1,0 +1,10 @@
+$ pytest -v
+============================= test session starts ==============================
+collecting ... collected 4 items
+
+tests/test_payments.py::test_charges_on_first_attempt PASSED             [ 25%]
+tests/test_payments.py::test_retries_after_timeout PASSED                [ 50%]
+tests/test_payments.py::test_gives_up_after_max_attempts PASSED          [ 75%]
+tests/test_payments.py::test_each_attempt_is_traceable PASSED            [100%]
+
+============================== 4 passed in 0.01s ===============================
