@@ -10,7 +10,7 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
-reports/*.json
+**/reports/*.json
 coverage.xml
 htmlcov/
 .coverage
