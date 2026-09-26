@@ -20,14 +20,16 @@
           "attempt"
         ],
         [
-          "duplicate charge",
-          "duplicate charges",
-          "double charge",
-          "multiple charges",
-          "charged twice",
-          "charged multiple times",
+          "charge",
+          "payment"
+        ],
+        [
+          "again",
+          "duplicate",
+          "twice",
+          "multiple",
           "deduplicate",
-          "new charge"
+          "second charge"
         ]
       ],
       "forbidden_finding_terms": [
