@@ -8,12 +8,36 @@ responses, invalid JSON, a missing result, or a result with the wrong shape.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
 
 DECISION_PATH = "/v1/data/gateway/decision"
+DEFAULT_POLICY_FILE = Path(__file__).resolve().parents[2] / "policies" / "gateway.rego"
+
+
+@dataclass(frozen=True)
+class PolicyMetadata:
+    """Provenance of the policy artifact this gateway is configured against.
+
+    `sha256` is computed once from the exact bytes of the policy file and then
+    reused for every audit event of the Gateway instance holding it.
+
+    LIMITATION: this identifies the artifact the gateway *expects*. It is not
+    proof that the OPA instance answering decisions loaded those bytes; OPA is
+    a separate process queried over HTTP and nothing here attests its state.
+    """
+
+    artifact: str
+    sha256: str
+
+    @classmethod
+    def from_file(cls, path: Path = DEFAULT_POLICY_FILE) -> PolicyMetadata:
+        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        return cls(artifact=Path(path).name, sha256=digest)
 
 
 @dataclass(frozen=True)

@@ -34,8 +34,8 @@ from mcp import Client, StdioServerParameters, types
 from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
 
-from .audit import AuditLog, summarize_arguments
-from .policy import OpaPolicyClient, PolicyClient, PolicyDecision
+from .audit import AuditLog, clip_policy_text, safe_tool_name, summarize_arguments
+from .policy import OpaPolicyClient, PolicyClient, PolicyDecision, PolicyMetadata
 
 LAB_ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,12 +102,25 @@ def denial_result(decision_id: str, decision: PolicyDecision) -> types.CallToolR
     )
 
 
+def _ms_since(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 2)
+
+
 class Gateway:
-    def __init__(self, context: TrustedContext, policy: PolicyClient, downstream: Client, audit: AuditLog) -> None:
+    def __init__(
+        self,
+        context: TrustedContext,
+        policy: PolicyClient,
+        downstream: Client,
+        audit: AuditLog,
+        policy_metadata: PolicyMetadata | None = None,
+    ) -> None:
         self.context = context
         self.policy = policy
         self.downstream = downstream
         self.audit = audit
+        # Computed once: every event from this instance carries the same fingerprint.
+        self.policy_metadata = policy_metadata if policy_metadata is not None else PolicyMetadata.from_file()
 
     async def list_tools(self) -> types.ListToolsResult:
         # Discovery is not authorization: listing a tool grants nothing.
@@ -121,54 +134,98 @@ class Gateway:
             raise ValueError("authorized tool is not exposed by downstream server")
         return allowlist_downstream_arguments(arguments, downstream_tool.input_schema)
 
+    def _evidence(self, tool_name: str) -> dict[str, Any]:
+        """Trusted context + policy provenance repeated on every event of a decision."""
+        return {
+            "principal_id": self.context.principal_id,
+            "role": self.context.role,
+            "environment": self.context.environment,
+            "channel": self.context.channel,
+            "trusted_human_approved": self.context.human_approved,
+            "tool_name": safe_tool_name(tool_name),
+            "policy_artifact": self.policy_metadata.artifact,
+            "policy_hash": self.policy_metadata.sha256,
+        }
+
     async def call_tool(self, tool_name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
         decision_id = str(uuid.uuid4())
         started = time.perf_counter()
         args = arguments if isinstance(arguments, dict) else {}
-        who = {
-            "principal_id": self.context.principal_id,
-            "role": self.context.role,
-            "tool_name": tool_name[:64],
-        }
-        self.audit.record("requested", decision_id, **who, **summarize_arguments(args))
+        evidence = self._evidence(tool_name)
+        self.audit.record("requested", decision_id, **evidence, **summarize_arguments(args))
 
+        policy_started = time.perf_counter()
         try:
             decision = await self.policy.decide(build_policy_input(self.context, tool_name, args))
         except Exception:  # any PEP-side failure is a deny, never a pass-through
             decision = PolicyDecision(False, "policy evaluation failed; request denied", "gateway.policy_exception")
+        verdict = {
+            "decision": "allow" if decision.allow is True else "deny",
+            "rule_id": clip_policy_text(decision.rule_id),
+            "reason": clip_policy_text(decision.reason),
+            "policy_latency_ms": _ms_since(policy_started),
+        }
 
-        verdict = {"rule_id": decision.rule_id, "reason": decision.reason}
         if decision.allow is not True:
-            latency = round((time.perf_counter() - started) * 1000, 2)
-            self.audit.record("denied", decision_id, **who, **verdict, downstream_executed=False, gateway_latency_ms=latency)
+            self.audit.record(
+                "denied",
+                decision_id,
+                **evidence,
+                **verdict,
+                downstream_executed=False,
+                execution_status="not_invoked",
+                gateway_latency_ms=_ms_since(started),
+            )
             return denial_result(decision_id, decision)
 
-        self.audit.record("allowed", decision_id, **who, **verdict)
+        self.audit.record("allowed", decision_id, **evidence, **verdict)
+
+        # Stage 1: prepare arguments. A failure here is before any tool invocation.
         try:
             # The policy evaluates the original request, including any spoofed
             # fields. Only schema-declared arguments cross the gateway after
             # authorization, preventing today's ignored extras from becoming
             # tomorrow's accidental authority-bearing parameters.
             downstream_args = await self._downstream_arguments(tool_name, args)
+        except Exception as exc:
+            return self._downstream_failed(decision_id, evidence, started, exc, stage="argument_preparation", invoked=False)
+
+        # Stage 2: invoke. Once call_tool has been entered, an exception does not
+        # prove the tool did not run (e.g. it executed but the response was lost).
+        try:
             result = await self.downstream.call_tool(tool_name, downstream_args)
         except Exception as exc:
-            self.audit.record("downstream_failed", decision_id, **who, error_type=type(exc).__name__)
-            return types.CallToolResult(
-                content=[types.TextContent(type="text", text="Downstream call failed.")], is_error=True
-            )
+            return self._downstream_failed(decision_id, evidence, started, exc, stage="downstream_call", invoked=True)
 
-        latency = round((time.perf_counter() - started) * 1000, 2)
-        # downstream_error=True means the tool ran but reported a business error
-        # (e.g. unknown order), so no side effect is expected.
+        # A response came back. is_error is recorded as reported by MCP; no
+        # conclusion about business side effects is drawn from it.
         self.audit.record(
             "executed",
             decision_id,
-            **who,
+            **evidence,
             downstream_executed=True,
+            execution_status="completed",
+            downstream_result="tool_error" if result.is_error else "success",
             downstream_error=bool(result.is_error),
-            gateway_latency_ms=latency,
+            gateway_latency_ms=_ms_since(started),
         )
         return result
+
+    def _downstream_failed(
+        self, decision_id: str, evidence: dict[str, Any], started: float, exc: Exception, *, stage: str, invoked: bool
+    ) -> types.CallToolResult:
+        self.audit.record(
+            "downstream_failed",
+            decision_id,
+            **evidence,
+            failure_stage=stage,
+            # None = unknown: never record a definite "false" we cannot back up.
+            downstream_executed=None if invoked else False,
+            execution_status="unknown" if invoked else "not_invoked",
+            error_type=type(exc).__name__,
+            gateway_latency_ms=_ms_since(started),
+        )
+        return types.CallToolResult(content=[types.TextContent(type="text", text="Downstream call failed.")], is_error=True)
 
 
 def build_gateway_server(gateway: Gateway) -> Server:
