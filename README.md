@@ -11,7 +11,7 @@ These labs are designed around the difference between **AI experimentation** and
 | [01 — PR Guardian](labs/01-pr-guardian/README.md) | Bounded PR-review agent, evals, tracing, token/cost measurement, regression testing | **Ready** |
 | [02 — Zero-Trust MCP Gateway](labs/02-zero-trust-mcp-gateway/README.md) | MCP security, OPA/Rego policy-as-code, prompt injection, least privilege | **Ready** |
 | 03 — Incident Commander | OpenTelemetry, traces, AI-assisted incident diagnosis | Planned |
-| 04 — AI Engineering Golden Path | Reusable AI platform primitives and developer self-service | Planned |
+| [04 — AI Engineering Golden Path](labs/04-ai-engineering-golden-path/README.md) | Reusable AI platform primitives, capability contracts, evals, observability, governance, and developer self-service | **Ready** |
 
 ## Why this repository exists
 
@@ -52,7 +52,7 @@ ai-engineering-labs/
         ├── evals/
         ├── reports/
         └── tests/
-    └── 02-zero-trust-mcp-gateway/
+    ├── 02-zero-trust-mcp-gateway/
         ├── README.md
         ├── PROMPTS.md
         ├── LEARNING-NOTES.md
@@ -61,6 +61,18 @@ ai-engineering-labs/
         ├── src/
         ├── policies/
         ├── fixtures/
+        ├── tests/
+        └── reports/
+    └── 04-ai-engineering-golden-path/
+        ├── README.md
+        ├── ARCHITECTURE.md
+        ├── PROMPTS.md
+        ├── LEARNING-NOTES.md
+        ├── requirements.txt
+        ├── schemas/
+        ├── src/
+        ├── templates/
+        ├── examples/
         ├── tests/
         └── reports/
 ```

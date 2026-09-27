@@ -36,3 +36,23 @@ Additional Lab 02 rules:
 - Keep policy decision-making separate from policy enforcement.
 - Record attempted, denied, and executed actions separately.
 - Do not expose the downstream MCP server directly to the agent in the final architecture.
+
+
+## Lab 04
+
+Canonical instructions: `labs/04-ai-engineering-golden-path/README.md`
+
+Architecture contract: `labs/04-ai-engineering-golden-path/ARCHITECTURE.md`
+
+Copyable implementation prompts: `labs/04-ai-engineering-golden-path/PROMPTS.md`
+
+Additional Lab 04 rules:
+
+- Treat the golden path as a product for engineers, not a pile of shared helper code.
+- Keep the core vendor-neutral; model/provider specifics belong behind explicit adapters.
+- Generated capabilities must include evaluation, observability, budgets, and policy hooks by default.
+- Do not let generated applications silently bypass declared capability contracts.
+- Prefer explicit capability manifests and inspectable generated files over hidden framework magic.
+- Measure developer experience as well as runtime quality: time-to-first-green, override frequency, verification time, and upgrade friction.
+- Escape hatches may exist, but they must be explicit, reviewable, and observable.
+- Do not implement future phases before the human requests them.
