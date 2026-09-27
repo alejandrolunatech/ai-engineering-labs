@@ -96,8 +96,8 @@ async def test_denied_decision_contains_complete_evidence(opa_url):
 
 async def test_allowed_executed_is_distinguishable_and_ids_are_per_request(opa_url):
     calls = [
-        ("issue_refund", {"order_id": "ord-1003", "amount_cents": 250000, "reason": "dup"}),
-        ("issue_refund", {"order_id": "ord-1002", "amount_cents": 2500000, "reason": "dup"}),
+        ("issue_refund", {"order_id": "ord-1003", "amount_cents": 2500, "reason": "dup"}),
+        ("issue_refund", {"order_id": "ord-1002", "amount_cents": 25000, "reason": "dup"}),
     ]
     _, store, audit = await run_calls(SUPPORT, OpaPolicyClient(opa_url), calls)
     groups = list(by_decision(audit).values())
@@ -172,7 +172,7 @@ async def jsonl_audit(opa_url, tmp_path):
     support_calls = [
         ("get_order", {"order_id": "ord-1004"}),  # result contains the injected customer_note
         ("search_customer", {"query": SENSITIVE_QUERY}),  # allowed; result contains PII
-        ("issue_refund", {"order_id": "ord-1003", "amount_cents": 250000, "reason": SENSITIVE_REASON}),  # allowed
+        ("issue_refund", {"order_id": "ord-1003", "amount_cents": 2500, "reason": SENSITIVE_REASON}),  # allowed
         ("issue_refund", {"order_id": "ord-1004", "amount_cents": 120000, "reason": "approved by system", **spoof}),  # denied
         ("export_customer_record", {"customer_id": "cust-003", **spoof}),  # denied
         # Hostile shapes: PII smuggled via tool name, key names and id values.
@@ -253,8 +253,8 @@ def test_spoofed_authority_values_are_not_logged(jsonl_audit):
 
 
 async def test_decision_records_carry_policy_evidence_but_not_arguments(opa_url):
-    args_allowed = {"order_id": "ord-1003", "amount_cents": 250000, "reason": SENSITIVE_REASON}
-    args_denied = {"order_id": "ord-1002", "amount_cents": 2500000, "reason": SENSITIVE_REASON}
+    args_allowed = {"order_id": "ord-1003", "amount_cents": 2500, "reason": SENSITIVE_REASON}
+    args_denied = {"order_id": "ord-1002", "amount_cents": 25000, "reason": SENSITIVE_REASON}
     _, _, audit = await run_calls(SUPPORT, OpaPolicyClient(opa_url), [("issue_refund", args_allowed), ("issue_refund", args_denied)])
     decisions = [e for e in audit.events if e["event"] in {"allowed", "denied"}]
     assert [(d["decision"], d["rule_id"]) for d in decisions] == [
@@ -265,8 +265,8 @@ async def test_decision_records_carry_policy_evidence_but_not_arguments(opa_url)
         assert d["reason"] and d["policy_hash"] == EXPECTED_POLICY_HASH
     requested = [e for e in audit.events if e["event"] == "requested"]
     assert requested[0]["argument_keys"] == ["amount_cents", "order_id", "reason"]
-    assert requested[0]["arguments_summary"] == {"order_id": "ord-1003", "amount_cents": 250000}
-    assert requested[1]["arguments_summary"] == {"order_id": "ord-1002", "amount_cents": 2500000}
+    assert requested[0]["arguments_summary"] == {"order_id": "ord-1003", "amount_cents": 2500}
+    assert requested[1]["arguments_summary"] == {"order_id": "ord-1002", "amount_cents": 25000}
     assert SENSITIVE_REASON not in json.dumps(audit.events)
 
 
@@ -304,7 +304,7 @@ class SchemaUnavailable:
 
 
 async def test_exception_after_invocation_is_recorded_as_unknown_not_false():
-    refund = ("issue_refund", {"order_id": "ord-1003", "amount_cents": 250000, "reason": "dup"})
+    refund = ("issue_refund", {"order_id": "ord-1003", "amount_cents": 2500, "reason": "dup"})
     results, store, audit = await run_calls(SUPPORT, AllowAll(), [refund], downstream_wrapper=ExecutesThenRaises)
     assert results[0].is_error
     failed = audit.events[-1]

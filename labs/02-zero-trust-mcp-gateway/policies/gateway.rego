@@ -70,7 +70,7 @@ decision := {
 	not tool in role_tools[role]
 } else := {
 	"allow": false,
-	"reason": "refund amount must be a positive number",
+	"reason": "refund amount must be a positive integer number of cents",
 	"rule_id": "deny.refund.invalid_amount",
 } if {
 	tool == "issue_refund"

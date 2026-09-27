@@ -195,7 +195,15 @@ Consider:
 - incident response;
 - human approval for high-impact actions.
 
-_Write here._
+The independent review identified these enterprise gaps:
+
+- **Authenticated identity:** trusted context is outside model arguments, but environment configuration is not authentication.
+- **Deployment boundary:** the downstream MCP server is authorization-free; production must make gateway bypass structurally impossible.
+- **Approval scope:** the lab approval flag is session-wide. Real approval must bind to an exact action/resource, have provenance/expiry, and prevent replay.
+- **Business/resource authorization:** per-call limits are not tenant, customer, case, entitlement, or cumulative-budget authorization.
+- **Policy control plane:** OPA is itself an authority and needs protected administration and verified deployment.
+- **Execution integrity:** financial actions need executor-side operation IDs, idempotency, durable outcomes, and reconciliation.
+- **Audit/provenance:** a local policy hash identifies the expected artifact, not necessarily what remote OPA loaded; JSONL is not tamper-evident.
 
 ---
 
@@ -203,23 +211,35 @@ _Write here._
 
 ### Blockers
 
-_Write here._
+1. Identity is configured rather than authenticated.
+2. The gateway is the intended route but not a proven enterprise deployment boundary.
+3. Human approval is reusable/session-wide rather than action-scoped and replay-resistant.
+4. Argument authorization lacks resource/tenant/case scope and cumulative budgets.
+5. The OPA policy control plane is not hardened as an enterprise authority.
 
 ### Important findings
 
-_Write here._
+- Prompt injection can cause an executed action without privilege escalation when the injected request stays inside existing authority. A €50 support refund is policy-allowed even if malicious text caused the request.
+- Per-call limits do not cap cumulative damage; repetition is part of authorization design.
+- Audit filtering minimizes obvious free text but character shape alone does not prove a value is non-sensitive.
+- Gateway audit stages are useful evidence, but committed business effects require executor-side durable records and reconciliation.
+- The local policy hash identifies the expected artifact, not an attested remote OPA state.
+- Policy and execution must share money semantics; fractional euro input exposed a rounding mismatch.
 
 ### Nice-to-have improvements
 
-_Write here._
+Role-filtered tool discovery, generated boundary tests, additional policy mutation tests, and pinned dependencies.
 
 ### Recommendations accepted
 
-_Write here._
+- Refund amounts now use integer cents across the tool contract, OPA policy, audit summary, and downstream executor.
+- A permanent regression test demonstrates that a prompt-injected but policy-permitted €50 refund can execute.
+- Audit documentation now states that format validation is not a sensitivity classifier.
+- Enterprise blockers are explicitly documented rather than hidden behind green test results.
 
 ### Recommendations intentionally deferred
 
-_Write here._
+Authenticated enterprise identity, network/service isolation, action-scoped approval tokens, cumulative transactional budgets, OPA control-plane hardening, deployed-policy attestation, tamper-evident audit storage, and durable transactional reconciliation are platform concerns beyond this synthetic learning lab.
 
 ---
 
