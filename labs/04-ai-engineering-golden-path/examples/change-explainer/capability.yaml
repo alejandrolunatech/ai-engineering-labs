@@ -1,0 +1,46 @@
+# Change Explainer — reference capability manifest (synthetic example).
+# Validated structurally by schemas/capability.schema.json.
+# This file must never contain secrets, credentials, endpoints or provider model IDs.
+api_version: ai.platform/v1
+kind: Capability
+
+metadata:
+  name: change-explainer
+  version: "0.1.0"            # capability version (product-team-owned)
+  template_version: "0.1.0"   # golden-path template provenance (platform-owned)
+
+spec:
+  purpose: >-
+    Explain a synthetic software change in structured language for a
+    non-specialist stakeholder.
+
+  inputs:
+    schema: schemas/input.schema.json
+  outputs:
+    schema: schemas/output.schema.json
+
+  model:
+    profile: balanced
+    adapter: default
+
+  authority:
+    tools: []
+
+  budgets:
+    max_model_requests: 2
+    max_output_tokens: 800
+    max_latency_ms: 5000
+
+  data:
+    sensitivity: synthetic
+
+  evaluation:
+    # Path is validated structurally only in Phase 1; the eval suite is
+    # created in Phase 4, and its existence becomes a verifier invariant then.
+    suite: evals/cases.yaml
+    required_pass_rate: 1.0
+
+  observability:
+    tracing: true
+    usage: true
+    cost: true

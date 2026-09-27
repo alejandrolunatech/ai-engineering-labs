@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:example:change-explainer:output:v1",
+  "title": "Change Explainer output (synthetic)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["headline", "explanation", "risk_level", "open_questions"],
+  "properties": {
+    "headline": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "explanation": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "risk_level": { "enum": ["low", "medium", "high", "unknown"] },
+    "open_questions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+    }
+  }
+}

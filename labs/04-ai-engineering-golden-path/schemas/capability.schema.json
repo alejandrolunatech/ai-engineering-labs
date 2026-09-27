@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:schema:capability:v1",
+  "title": "AI Capability Manifest (ai.platform/v1)",
+  "description": "Structural contract for capability.yaml. Validates shape, types, bounds and naming only. It does NOT verify that referenced files exist, that budgets are enforced at runtime, that telemetry is emitted, or that the capability is safe or production-ready; those are later verifier/runtime responsibilities.",
+  "$comment": "Unknown fields fail closed: every object sets additionalProperties=false. A released version of this schema must not be mutated; changes require a new api_version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "kind", "metadata", "spec"],
+  "properties": {
+    "api_version": { "const": "ai.platform/v1" },
+    "kind": { "const": "Capability" },
+
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "template_version"],
+      "properties": {
+        "name": {
+          "description": "Directory- and CLI-safe capability name: lowercase ASCII letters/digits, single hyphens between segments, starts with a letter.",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 40,
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "version": {
+          "description": "Version of the capability itself. Product-team-owned.",
+          "$ref": "#/$defs/semver"
+        },
+        "template_version": {
+          "description": "Version of the golden-path template that produced this capability. Platform-owned provenance; written by tooling, not edited by hand.",
+          "$ref": "#/$defs/semver"
+        }
+      }
+    },
+
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "inputs",
+        "outputs",
+        "model",
+        "authority",
+        "budgets",
+        "data",
+        "evaluation",
+        "observability"
+      ],
+      "properties": {
+        "purpose": {
+          "description": "Human-readable scope statement. Presence is enforced; accuracy is not.",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500,
+          "pattern": "\\S"
+        },
+
+        "inputs": { "$ref": "#/$defs/schemaReference" },
+        "outputs": { "$ref": "#/$defs/schemaReference" },
+
+        "model": {
+          "description": "Provider-neutral model selection. Provider model IDs, endpoints, credentials, sampling parameters and SDK configuration are deliberately not representable here; they belong behind the adapter.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "adapter"],
+          "properties": {
+            "profile": {
+              "description": "Platform-defined capability tier. What each profile maps to is adapter configuration, not manifest content.",
+              "enum": ["fast", "balanced", "deep"]
+            },
+            "adapter": {
+              "description": "Logical adapter slug resolved outside the manifest.",
+              "$ref": "#/$defs/slug"
+            }
+          }
+        },
+
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tools"],
+          "properties": {
+            "tools": {
+              "description": "Explicit tool allowlist. Must be present even when empty. Declaring a tool does not authorize it at runtime; that is a later policy concern.",
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9]*([_-][a-z0-9]+)*$"
+              }
+            }
+          }
+        },
+
+        "budgets": {
+          "description": "Upper bounds are lab/platform policy choices for this golden path, not industry standards.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_model_requests", "max_output_tokens", "max_latency_ms"],
+          "properties": {
+            "max_model_requests": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "max_output_tokens": { "type": "integer", "minimum": 1, "maximum": 16384 },
+            "max_latency_ms": { "type": "integer", "minimum": 1, "maximum": 120000 }
+          }
+        },
+
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sensitivity"],
+          "properties": {
+            "sensitivity": {
+              "description": "Declared label only. Nothing in v1 enforces handling based on it.",
+              "enum": ["synthetic", "public", "internal", "confidential"]
+            }
+          }
+        },
+
+        "evaluation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["suite", "required_pass_rate"],
+          "properties": {
+            "suite": {
+              "description": "Relative path to the eval suite. Validated structurally only; file existence is a later verifier invariant.",
+              "allOf": [
+                { "$ref": "#/$defs/relativePath" },
+                { "pattern": "\\.ya?ml$" }
+              ]
+            },
+            "required_pass_rate": {
+              "description": "Fraction of eval cases that must pass. 0 is rejected: a present-but-meaningless eval gate contradicts evaluation-by-default.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+
+        "observability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tracing", "usage", "cost"],
+          "properties": {
+            "tracing": {
+              "description": "Mandatory in v1. Disabling it would require a future explicit exception mechanism.",
+              "const": true
+            },
+            "usage": {
+              "description": "Mandatory in v1. Disabling it would require a future explicit exception mechanism.",
+              "const": true
+            },
+            "cost": {
+              "description": "Explicitly declared. false means cost is not estimated (reported as unknown, never as zero), because pricing metadata may be unavailable.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "semver": {
+      "description": "Strict MAJOR.MINOR.PATCH without pre-release/build metadata. Must be a YAML string (quote it).",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "relativePath": {
+      "description": "POSIX-style path relative to the capability root. Rejects absolute paths, home expansion, hidden leading segments, backslashes, '.'/'..' segments, empty segments and trailing slashes. Symlink escape can only be checked on the filesystem.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+    },
+    "schemaReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema"],
+      "properties": {
+        "schema": {
+          "allOf": [
+            { "$ref": "#/$defs/relativePath" },
+            { "pattern": "\\.json$" }
+          ]
+        }
+      }
+    }
+  }
+}

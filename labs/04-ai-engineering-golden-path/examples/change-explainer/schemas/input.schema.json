@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:example:change-explainer:input:v1",
+  "title": "Change Explainer input (synthetic)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_id", "title", "summary", "files_changed"],
+  "properties": {
+    "change_id": { "type": "string", "pattern": "^CHG-[0-9]{1,8}$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "files_changed": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "type": "string", "minLength": 1, "maxLength": 255 }
+    }
+  }
+}
