@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -27,7 +26,7 @@ from jsonschema import Draft202012Validator
 from golden_path import scaffold
 
 CAPABILITY = "runtime-demo"
-GENERATED_MODULES = {"capability", "contracts", "model_adapter"}
+GENERATED_MODULES = {"capability", "contracts", "model_adapter", "evaluator"}
 ALLOWED_THIRD_PARTY = {"jsonschema", "yaml", "pytest"}
 FORBIDDEN_IN_SRC = {
     "golden_path",
@@ -52,20 +51,6 @@ def project(tmp_path_factory) -> Path:
     return destination
 
 
-@pytest.fixture(scope="module")
-def blocked_env(tmp_path_factory) -> dict:
-    """Environment in which importing golden_path fails, even though the
-    platform is installed (editable) in this venv."""
-    stub_root = tmp_path_factory.mktemp("block-golden-path")
-    (stub_root / "golden_path").mkdir()
-    (stub_root / "golden_path" / "__init__.py").write_text(
-        'raise ImportError("generated projects must not import golden_path")\n'
-    )
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    env.update({"PYTHONPATH": str(stub_root), "PYTHONDONTWRITEBYTECODE": "1"})
-    return env
-
-
 def run_cli(project: Path, env: dict, input_path: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "src/capability.py", input_path],
@@ -88,9 +73,9 @@ def test_block_stub_really_blocks_golden_path(blocked_env):
 # --- generation --------------------------------------------------------------------
 
 
-def test_manifest_records_template_0_2_0_and_fake_adapter(project):
+def test_manifest_records_current_template_and_fake_adapter(project):
     manifest = yaml.safe_load((project / "capability.yaml").read_text())
-    assert manifest["metadata"]["template_version"] == "0.2.0"
+    assert manifest["metadata"]["template_version"] == scaffold.TEMPLATE_VERSION
     assert manifest["spec"]["model"]["adapter"] == "fake"
 
 
@@ -133,7 +118,7 @@ def test_generated_code_imports_only_stdlib_declared_deps_and_itself(project):
 
 
 def test_generated_src_has_no_network_env_or_provider_access(project):
-    for path in sorted((project / "src").glob("*.py")):
+    for path in sorted([*(project / "src").glob("*.py"), *(project / "evals").glob("*.py")]):
         forbidden = _imports(path) & FORBIDDEN_IN_SRC
         assert not forbidden, f"{path.name} imports {sorted(forbidden)}"
         text = path.read_text()
@@ -171,11 +156,15 @@ def test_cli_sample_run_produces_schema_valid_deterministic_result(project, bloc
     result = json.loads(first.stdout)
     output_schema = json.loads((project / "schemas" / "output.schema.json").read_text())
     assert list(Draft202012Validator(output_schema).iter_errors(result["output"])) == []
-    assert result["capability"] == {"name": CAPABILITY, "version": "0.1.0", "template_version": "0.2.0"}
+    assert result["capability"] == {
+        "name": CAPABILITY,
+        "version": "0.1.0",
+        "template_version": scaffold.TEMPLATE_VERSION,
+    }
     assert result["model"] == {
         "declared_adapter": "fake",
         "declared_profile": "balanced",
-        "adapter_reported": {"adapter": "fake", "model": "fake-deterministic-v1"},
+        "adapter_reported": {"adapter": "fake", "model": "fake-deterministic-v2"},
     }
     assert result["model_requests"] == {"used": 1, "limit": 2}
 

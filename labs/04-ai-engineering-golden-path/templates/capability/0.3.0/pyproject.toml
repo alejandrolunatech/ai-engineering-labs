@@ -1,0 +1,6 @@
+# Test configuration only. This template version does not package or install
+# this project; run it from the project root with `python src/capability.py`
+# and `python evals/evaluator.py`.
+[tool.pytest.ini_options]
+pythonpath = ["src", "evals"]
+testpaths = ["tests"]

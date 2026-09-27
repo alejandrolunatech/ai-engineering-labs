@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:schema:eval-report:v1",
+  "title": "Eval Report (ai.platform/v1)",
+  "description": "Machine-readable result of running a capability's eval suite. It deliberately has no timestamps, identifiers, durations, token or cost fields, absolute paths, raw model outputs or error messages, so the same code and inputs produce identical bytes. observed_pass_rate is the fraction of declared cases that met their declared expectations; it is not accuracy.",
+  "$comment": "A released version of this schema must not be mutated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "kind", "capability", "suite", "evaluator", "model", "cases", "summary"],
+  "properties": {
+    "api_version": { "const": "ai.platform/v1" },
+    "kind": { "const": "EvalReport" },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "template_version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "template_version": { "type": "string" }
+      }
+    },
+    "suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "evaluator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checks", "model_judge"],
+      "properties": {
+        "checks": { "const": "deterministic" },
+        "model_judge": { "const": "none" }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declared_adapter", "declared_profile"],
+      "properties": {
+        "declared_adapter": { "type": "string" },
+        "declared_profile": { "type": "string" }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "passed", "failed", "observed_pass_rate", "required_pass_rate", "gate_passed"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 1 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "observed_pass_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "required_pass_rate": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "gate_passed": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "property", "adapter", "outcome", "checks", "passed"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["expect_success", "expect_input_rejected", "expect_output_rejected"] },
+        "property": { "type": "string" },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "reported_model"],
+          "properties": {
+            "source": {
+              "description": "manifest: the configured adapter. scripted: a FakeModelAdapter replaying the case's model_script.",
+              "enum": ["manifest", "scripted"]
+            },
+            "reported_model": {
+              "description": "Adapter-reported label; untrusted metadata. Null when no result was produced.",
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "outcome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["result", "model_requests_used"],
+          "properties": {
+            "result": {
+              "description": "'succeeded', a capability error class name, or 'unexpected_error:<ClassName>'.",
+              "type": "string"
+            },
+            "model_requests_used": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/check" }
+        },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "expected", "passed"],
+      "properties": {
+        "name": { "type": "string" },
+        "expected": {},
+        "observed": {
+          "description": "Only enums, counts, booleans or result names. Never raw output text."
+        },
+        "missing": {
+          "description": "For substring checks: the expected substrings that were not found.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "passed": { "type": "boolean" }
+      }
+    }
+  }
+}

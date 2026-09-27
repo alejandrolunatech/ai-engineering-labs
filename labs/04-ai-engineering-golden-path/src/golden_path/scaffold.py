@@ -27,16 +27,22 @@ from jsonschema import Draft202012Validator
 LAB_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES_ROOT = LAB_ROOT / "templates"
 CAPABILITY_SCHEMA_PATH = LAB_ROOT / "schemas" / "capability.schema.json"
+EVAL_SUITE_SCHEMA_PATH = LAB_ROOT / "schemas" / "eval-suite.schema.json"
+EVAL_REPORT_SCHEMA_PATH = LAB_ROOT / "schemas" / "eval-report.schema.json"
 
 TEMPLATE_ID = "capability"
 # The current template. Released template versions are immutable: a change to
 # generated output means a new version directory, never an edit to an old one.
-TEMPLATE_VERSION = "0.2.0"
+TEMPLATE_VERSION = "0.3.0"
 RENDER_SUFFIX = ".j2"
 
 # Platform-managed files copied byte-for-byte from canonical platform sources
 # rather than from the template, so a template cannot drift from the contract.
-PLATFORM_FILES = {"platform/capability.schema.json": CAPABILITY_SCHEMA_PATH}
+PLATFORM_FILES = {
+    "platform/capability.schema.json": CAPABILITY_SCHEMA_PATH,
+    "platform/eval-report.schema.json": EVAL_REPORT_SCHEMA_PATH,
+    "platform/eval-suite.schema.json": EVAL_SUITE_SCHEMA_PATH,
+}
 
 
 class ScaffoldError(Exception):

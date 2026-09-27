@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:schema:eval-suite:v1",
+  "title": "Eval Suite (ai.platform/v1)",
+  "description": "Structural contract for a capability's evals/cases.yaml. It validates the shape of declared eval cases only. It does not judge whether the cases are well chosen or sufficient.",
+  "$comment": "Known coupling: the expectation vocabulary (risk_level_in, headline_contains, ...) matches the Change Explainer output contract. A second capability type will need a new or more general vocabulary. A released version of this schema must not be mutated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "kind", "cases"],
+  "properties": {
+    "api_version": { "const": "ai.platform/v1" },
+    "kind": { "const": "EvalSuite" },
+    "cases": {
+      "description": "Must contain at least one success case and at least one rejection case. This does not make the suite comprehensive.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/case" },
+      "allOf": [
+        {
+          "contains": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "expect_success" } }
+          }
+        },
+        {
+          "contains": {
+            "required": ["kind"],
+            "properties": { "kind": { "enum": ["expect_input_rejected", "expect_output_rejected"] } }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "property", "input"],
+      "properties": {
+        "id": {
+          "description": "Unique within the suite (uniqueness is checked by the evaluator, not by this schema).",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "kind": { "enum": ["expect_success", "expect_input_rejected", "expect_output_rejected"] },
+        "property": {
+          "description": "The behavioral promise this case checks, stated in plain language.",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 300,
+          "pattern": "\\S"
+        },
+        "input": {
+          "description": "Capability input. Any JSON value: rejection cases may deliberately use invalid shapes."
+        },
+        "expect": { "$ref": "#/$defs/expectations" },
+        "model_script": {
+          "description": "Raw model responses returned in order by a scripted fake adapter. Executed exactly as written: never padded, repeated or rewritten.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "expect_success" } } },
+          "then": { "required": ["expect"] },
+          "else": { "not": { "required": ["expect"] } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "expect_output_rejected" } } },
+          "then": { "required": ["model_script"] },
+          "else": { "not": { "required": ["model_script"] } }
+        }
+      ]
+    },
+    "expectations": {
+      "description": "Deterministic behavioral checks. Substring checks are lexical only, not semantic.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "risk_level_in": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "open_questions": { "enum": ["empty", "non_empty", "any"] },
+        "headline_contains": { "$ref": "#/$defs/substrings" },
+        "explanation_contains": { "$ref": "#/$defs/substrings" }
+      }
+    },
+    "substrings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+    }
+  }
+}

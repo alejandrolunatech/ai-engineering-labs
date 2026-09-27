@@ -37,12 +37,16 @@ from test_capability_schema import (
 )
 
 LAB_ROOT = Path(__file__).resolve().parents[1]
-# Tree produced by the CURRENT template version (capability@0.2.0).
+# Tree produced by the CURRENT template version (capability@0.3.0).
 EXPECTED_TREE = [
     "README.md",
     "capability.yaml",
+    "evals/cases.yaml",
+    "evals/evaluator.py",
     "fixtures/sample_input.json",
     "platform/capability.schema.json",
+    "platform/eval-report.schema.json",
+    "platform/eval-suite.schema.json",
     "pyproject.toml",
     "requirements.txt",
     "schemas/input.schema.json",
@@ -51,16 +55,31 @@ EXPECTED_TREE = [
     "src/contracts.py",
     "src/model_adapter.py",
     "tests/test_capability.py",
+    "tests/test_evals.py",
 ]
 
-# Released templates are immutable. These digests pin capability@0.1.0 exactly
-# as committed in Phase 2; any edit must become a new template version instead.
+# Released templates are immutable. These digests pin each released version
+# exactly as committed (0.1.0 in Phase 2, 0.2.0 in Phase 3); any change to
+# generated output must become a new template version instead.
 FROZEN_TEMPLATES = {
     "0.1.0": {
         "README.md.j2": "477a1d56242896f3a9c92263cf035c8a762bfc42c3236d2e9cf640e1f0a066b0",
         "capability.yaml.j2": "074444f57bfca53569e9643a988996947414fa6d4f4289c49ca634647631a97c",
         "schemas/input.schema.json": "30a49ee496efc3a7f55cf50bc74de7d16b9852d8c80c58b03d02b5f98e2b716d",
         "schemas/output.schema.json": "64b84ca89036e3c2af93c3184cfac927e468caedd314ae7463e9b5dcc785f029",
+    },
+    "0.2.0": {
+        "README.md.j2": "7d5f4fe1e98312282e967113902d412b02798ac4d750e7017a3a980a1610895f",
+        "capability.yaml.j2": "8cf2a7bdb16242a21e16bb81b19f0ae9a81f5d3b0fe3a9e21f4fda7928f546be",
+        "fixtures/sample_input.json": "4c20a26777581c984e430aaf892c63c67c94ab686beba13c03a2d51105e0c6f3",
+        "pyproject.toml": "5a57cde172efa412a05785571ba06e6f1764200ab386ad94a01187f1c8f2139b",
+        "requirements.txt": "bcb619e79ee54b01399e61246ecf9d186224c4ac0bdb9be656bbf77314689d99",
+        "schemas/input.schema.json": "30a49ee496efc3a7f55cf50bc74de7d16b9852d8c80c58b03d02b5f98e2b716d",
+        "schemas/output.schema.json": "64b84ca89036e3c2af93c3184cfac927e468caedd314ae7463e9b5dcc785f029",
+        "src/capability.py": "e929098ad461fb23a65e81c87f58a68d007c539c24218108e9f5882631a1d292",
+        "src/contracts.py": "819c2769d41756339866dedc17f6d4aaca78487de2a9fea37bc492b3282d2ff3",
+        "src/model_adapter.py": "c4d276f4749ccc3c21e4de609e87162d90a911c50ebbeac5280f2276602b0c5a",
+        "tests/test_capability.py": "9d5d6c199295502caa54b32168e6c38674a6a8e830073088900277ba10d4b125",
     },
 }
 
@@ -160,10 +179,12 @@ def test_invalid_name_creates_nothing(tmp_path, monkeypatch, name):
 
 def test_template_directory_matches_declared_version():
     root = scaffold.template_dir()
-    assert root.name == scaffold.TEMPLATE_VERSION == "0.2.0"
+    assert root.name == scaffold.TEMPLATE_VERSION == "0.3.0"
     assert [p.relative_to(root).as_posix() for p in scaffold.template_sources()] == [
         "README.md.j2",
         "capability.yaml.j2",
+        "evals/cases.yaml",
+        "evals/evaluator.py",
         "fixtures/sample_input.json",
         "pyproject.toml",
         "requirements.txt",
@@ -173,6 +194,7 @@ def test_template_directory_matches_declared_version():
         "src/contracts.py",
         "src/model_adapter.py",
         "tests/test_capability.py",
+        "tests/test_evals.py",
     ]
 
 
@@ -193,7 +215,6 @@ def test_new_creates_exact_tree(tmp_path, monkeypatch):
     project = tmp_path / "demo-capability"
     assert sorted(tree_digest(project)) == EXPECTED_TREE
     assert [p.name for p in tmp_path.iterdir()] == ["demo-capability"]
-    assert not (project / "evals").exists()  # eval kit is Phase 4
 
 
 @pytest.mark.parametrize("name", ["demo-capability", "change-explainer", "abc", "a" * 40, "yes", "null", "off", "true"])

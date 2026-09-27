@@ -514,17 +514,220 @@ only to YAML.
 
 ## Evaluation
 
+Evidence:
+- **Template:** `templates/capability/0.3.0/`, which adds `evals/cases.yaml`,
+  `evals/evaluator.py`, `tests/test_evals.py`, and platform snapshots of the
+  new canonical `schemas/eval-suite.schema.json` and
+  `schemas/eval-report.schema.json`.
+- **Platform tests:** `tests/test_template_evals.py` (13 tests). The full
+  Lab 04 suite is 235 tests, all passing.
+- **Manual run outside the repo:** `ai-golden-path new eval-demo` recorded
+  `template_version: "0.3.0"`. `python evals/evaluator.py` exited 0 with the
+  gate passed at 8/8. The generated `pytest` passed 58 tests: 32 runtime-
+  boundary and 26 eval-kit tests.
+
+### Template versioning
+
+`capability@0.2.0` was frozen as committed. All 11 of its file digests were
+added to `FROZEN_TEMPLATES`, next to 0.1.0. The eval kit went into
+`capability@0.3.0`. Compared with 0.2.0, the change is:
+- **Added:** `evals/cases.yaml`, `evals/evaluator.py`, `tests/test_evals.py`,
+  and two platform schema snapshots.
+- **Changed:** `contracts.py` (the `Manifest` gains `eval_suite_path` and
+  `required_pass_rate`; `load_yaml_strict` becomes public),
+  `model_adapter.py` (see below), and a one-line label assertion in
+  `test_capability.py`, plus the manifest comment, README and pytest path.
+- **Unchanged:** `src/capability.py`. There is no "eval mode".
+
+Phase 8 will work with the real chain: 0.1.0 (contract), 0.2.0 (runtime),
+0.3.0 (runtime plus eval kit).
+
 ### Cases
 
-_Write here._
+Eight synthetic cases. Each has a `property` stating the behavioral promise
+it checks.
+
+| Case | Kind | Checks |
+|---|---|---|
+| `clear-change` | success | `risk_level_in [low]`, no open questions, headline has `CHG-2001`, explanation has `3 file` |
+| `ambiguous-change` | success | risk **not** `low`, at least one open question, headline has `CHG-2002` |
+| `insufficient-context` | success | risk `unknown`, at least one open question |
+| `risky-payment-change` | success | risk `high`, headline has `CHG-2004` |
+| `benign-refactor` | success | risk `low`, no open questions |
+| `reject-input-missing-summary` | input rejected | `InputValidationError`, 0 model requests |
+| `reject-input-bad-change-id` | input rejected | `InputValidationError`, 0 model requests |
+| `reject-malformed-model-output` | output rejected | scripted prose, then partial JSON; `OutputValidationError`; 2 of 2 requests used, never 3 |
+
+**The ambiguous case came from an intentional capability behavior change,
+not from evaluator calibration.** The sequence was:
+1. Define the product expectation: a vaguely described change must not get a
+   confident low-risk claim, and should ask what it's meant to do.
+2. Change the capability's behavior on purpose: in 0.3.0, a summary of four
+   words or fewer gets `risk_level: unknown` plus the open question "What
+   behavior is this change meant to alter?". The label becomes
+   `fake-deterministic-v2` because the behavior changed.
+3. Write the eval that shows the behavior holds.
+
+**Scripted output case.** The evaluator injects
+`FakeModelAdapter(scripted=model_script)` through the Phase 3 seam and
+reports it as `adapter.source: "scripted"`, never as the configured adapter.
+The script is replayed **exactly as written**: the case declares two
+malformed responses because `max_model_requests` is 2, and a platform test
+asserts that the script length equals the budget. A regression test shortens
+the script to one response. The run then fails visibly
+(`ModelInvocationError` from the exhausted script) instead of being padded to
+pass. Eval case data is evidence; the evaluator interprets it and doesn't
+rewrite it.
 
 ### Metrics that are genuinely deterministic
 
-_Write here._
+Every check is a named, pure function of the case, the manifest and the
+real `run()` outcome:
+- `outcome` (expected result class);
+- `within_request_budget`;
+- `output_schema_valid`;
+- `risk_level_in` (enum membership);
+- `open_questions` (count is 0 or greater than 0);
+- `headline_contains` (exact substring);
+- `explanation_contains` (case-insensitive substring);
+- `no_model_request`;
+- `budget_exhausted_not_exceeded`.
+
+There's no model judge, no embeddings, no similarity and no scoring.
+**Substring checks are lexical only**: an explanation can contain `CHG-2004`
+and still be wrong.
+
+**The gate.** `evaluation.required_pass_rate` moved from **declared** to
+**enforced by the eval runner**. The comparison uses exact arithmetic:
+`Fraction(passed, total) >= Fraction(str(required))`.
+- My first docstring example of the float problem was wrong: `0.7 * 10` is
+  exactly `7.0` in floating point.
+- A mutation that replaced the gate with `passed >= ceil(rate * total)`
+  **survived** the first version of the tests.
+- The real example is `0.07 * 100 == 7.000000000000001`. The naive gate
+  wrongly fails 7/100 at a required rate of 0.07.
+- A test case for that was added, and the mutation is now caught.
+
+The evaluator's exit code is the gate:
+
+| Exit | Meaning |
+|---|---|
+| 0 | Gate met |
+| 1 | Gate not met |
+| 2 | Usage error |
+| 3 | Malformed manifest, suite or configuration, with no report |
+
+This is not `ai-capability verify`. Phase 7 will combine this gate with other
+checks.
+
+**Determinism evidence:**
+- Two command-line runs gave byte-identical stdout (10,120 bytes, same
+  SHA-256).
+- Platform tests show:
+  - identical output under `PYTHONHASHSEED=0` and `=1`;
+  - identical output for projects generated in different folders;
+  - keys are sorted;
+  - `suite.sha256` equals the `cases.yaml` bytes;
+  - no temp paths, home path, username, dates, UUIDs, or `timestamp`,
+    `duration`, `latency`, `tokens`, `cost` or `message` keys;
+  - no raw model text: neither the fake's explanation prefix nor the scripted
+    prose appears in the report.
+
+**Mutation evidence** (each mutation applied to a generated evaluator, then
+its `tests/test_evals.py` run):
+
+| Mutation | Result |
+|---|---|
+| Pad `model_script` | caught (1 failed) |
+| Ignore the outcome check | caught (1 failed) |
+| Scripted case reported as the configured adapter | caught (1 failed) |
+| Wall-clock time added to the report | caught (11 failed) |
+| Suite schema check skipped | caught (5 failed) |
+| Float gate | initially **survived**, caught after the fix |
+
+Several mutations are caught by a single test, so that coverage is thin.
+
+### Why negative expected failures count as passing eval cases
+
+A rejection case states a product promise, for example "input without a
+summary is refused before any model request". When the expected boundary
+rejects the case with the expected error class, and the budget checks hold,
+the promise was kept, so the case **passes**.
+
+A regression test shows the reverse: making the bad `change_id` valid causes
+the case to *succeed* at runtime, and the eval case then **fails**. Being
+rejected by the wrong boundary would also fail.
+
+### The AUTHORS.md false positive (recorded, not fixed)
+
+The fake's toy rule treats any path containing `auth` as high risk. I added a
+case to a copy of `eval-demo` without touching `model_adapter.py`:
+`docs-only-authors-update`, a documentation-only change to `AUTHORS.md`
+expected to be `low`.
+
+- **Result:** evaluator exit **1**, and `eval gate FAILED: 8/9`.
+- **The case:** `passed: false`, with failing check `risk_level_in` expected
+  `["low"]` but observed `"high"`.
+- **Summary:** `observed_pass_rate` dropped to 0.8888888888888888 and
+  `gate_passed` is `false`.
+
+A platform regression test keeps this exact evidence. The case is
+deliberately **not** in the default suite, and the heuristic was deliberately
+**not** fixed to make it pass. It shows that deterministic behavior can be
+reproducible and still wrong.
+
+### Malformed suite
+
+With every rejection case removed, the evaluator exited **3** with **0
+bytes** on stdout and this on stderr:
+
+```
+{"error": "EvalSuiteError", "message": "evals/cases.yaml violates platform/eval-suite.schema.json: cases failed 'contains'"}
+```
+
+No partial report is ever printed. Regression tests also cover:
+- duplicate IDs;
+- a missing `property`;
+- an unknown expectation;
+- a `model_script` on a success case;
+- a success case without expectations;
+- duplicate YAML keys;
+- a missing suite file;
+- declared tools.
 
 ### Metrics I should not overclaim
 
-_Write here._
+- **`observed_pass_rate` is not accuracy.** It's the fraction of *these
+  eight hand-written, declared cases* that met *their own declared
+  expectations*. The cases aren't a sample of any real distribution, the
+  expectations are chosen by the same people, and negative cases count as
+  passes by design.
+- **The fake and the suite were developed together.** The fake's rules and
+  these expectations were written by the same author in the same phase, so
+  cases 1–5 largely confirm that the capability does what it was built to
+  do. **A green suite is not independent evidence of model quality.** It
+  shows the eval kit works end to end, and gives a regression baseline that
+  becomes meaningful when a real adapter is plugged in.
+- **The eval format is tied to Change Explainer.** The platform
+  `eval-suite.schema.json` hard-codes `risk_level_in` and `headline_contains`,
+  which belong to Change Explainer's output. A second capability type
+  (Phase 9) will likely need a new or more general expectation vocabulary.
+  Recorded, not fixed.
+
+**What a green Phase 4 eval means:** the declared behavioral expectations in
+this finite synthetic suite were satisfied by this configured deterministic
+adapter.
+
+**What it does NOT mean:**
+- model accuracy or general intelligence;
+- production correctness or production readiness;
+- robustness on unseen inputs;
+- safety, fairness or lack of bias;
+- real-provider quality;
+- semantic truthfulness.
+
+It also says nothing about tokens, latency or cost, which are still only
+declared.
 
 ---
 
