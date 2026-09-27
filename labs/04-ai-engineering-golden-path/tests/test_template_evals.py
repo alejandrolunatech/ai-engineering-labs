@@ -21,6 +21,7 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
+from conftest import only_record
 from golden_path import scaffold
 
 CAPABILITY = "eval-demo"
@@ -112,7 +113,7 @@ def test_evaluator_passes_gate_and_report_validates(project, blocked_env):
         "gate_passed": True,
     }
     assert report["capability"]["template_version"] == scaffold.TEMPLATE_VERSION
-    assert "eval gate PASSED: 8/8" in completed.stderr
+    assert only_record(completed.stderr, "eval_summary")["gate_passed"] is True
 
 
 def test_report_is_byte_identical_across_processes_and_hash_seeds(project, blocked_env):
@@ -169,7 +170,8 @@ def test_authors_file_false_positive_fails_case_and_gate(project, blocked_env):
     assert risk == {"name": "risk_level_in", "expected": ["low"], "observed": "high", "passed": False}
     assert report["summary"]["observed_pass_rate"] == 8 / 9
     assert report["summary"]["gate_passed"] is False
-    assert "eval gate FAILED: 8/9" in completed.stderr
+    summary = only_record(completed.stderr, "eval_summary")
+    assert (summary["passed"], summary["total"], summary["gate_passed"]) == (8, 9, False)
 
 
 # --- malformed suite ----------------------------------------------------------------------
@@ -183,7 +185,7 @@ def test_malformed_suite_exits_3_with_no_partial_report(project, blocked_env):
     completed = run_evaluator(project, blocked_env)
     assert completed.returncode == 3
     assert completed.stdout == ""
-    assert json.loads(completed.stderr)["error"] == "EvalSuiteError"
+    assert only_record(completed.stderr, "error")["error"] == "EvalSuiteError"
 
 
 def test_declared_tools_abort_evaluation_with_exit_3(project, blocked_env):

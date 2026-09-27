@@ -37,7 +37,7 @@ from test_capability_schema import (
 )
 
 LAB_ROOT = Path(__file__).resolve().parents[1]
-# Tree produced by the CURRENT template version (capability@0.3.0).
+# Tree produced by the CURRENT template version (capability@0.4.0).
 EXPECTED_TREE = [
     "README.md",
     "capability.yaml",
@@ -47,19 +47,25 @@ EXPECTED_TREE = [
     "platform/capability.schema.json",
     "platform/eval-report.schema.json",
     "platform/eval-suite.schema.json",
+    "platform/pricing.schema.json",
+    "platform/telemetry-record.schema.json",
+    "pricing.yaml",
     "pyproject.toml",
     "requirements.txt",
     "schemas/input.schema.json",
     "schemas/output.schema.json",
     "src/capability.py",
     "src/contracts.py",
+    "src/cost.py",
     "src/model_adapter.py",
+    "src/telemetry.py",
     "tests/test_capability.py",
     "tests/test_evals.py",
+    "tests/test_telemetry.py",
 ]
 
 # Released templates are immutable. These digests pin each released version
-# exactly as committed (0.1.0 in Phase 2, 0.2.0 in Phase 3); any change to
+# exactly as committed (0.1.0 in Phase 2, 0.2.0 in Phase 3, 0.3.0 in Phase 4); any change to
 # generated output must become a new template version instead.
 FROZEN_TEMPLATES = {
     "0.1.0": {
@@ -80,6 +86,22 @@ FROZEN_TEMPLATES = {
         "src/contracts.py": "819c2769d41756339866dedc17f6d4aaca78487de2a9fea37bc492b3282d2ff3",
         "src/model_adapter.py": "c4d276f4749ccc3c21e4de609e87162d90a911c50ebbeac5280f2276602b0c5a",
         "tests/test_capability.py": "9d5d6c199295502caa54b32168e6c38674a6a8e830073088900277ba10d4b125",
+    },
+    "0.3.0": {
+        "README.md.j2": "9c1ef2437528be233f160b4b6706c7861ee827b5a6c4c7f4cca18d9730faa550",
+        "capability.yaml.j2": "91328b8530bd487df0cffb7ce8ad052bbbfe3563c0cf71a49d8c20c58eaae35e",
+        "evals/cases.yaml": "5726963364a07b5eddcebecec9b7c4ae914a429256632f1b4da60cd643347187",
+        "evals/evaluator.py": "2830953b6e04538a806897451653b707b9c6795766bd1fafe30fb332347858e3",
+        "fixtures/sample_input.json": "4c20a26777581c984e430aaf892c63c67c94ab686beba13c03a2d51105e0c6f3",
+        "pyproject.toml": "0e0b0ea22f9940538eca1098ddf495964117d382ec5bf608016120aae7e9f393",
+        "requirements.txt": "bcb619e79ee54b01399e61246ecf9d186224c4ac0bdb9be656bbf77314689d99",
+        "schemas/input.schema.json": "30a49ee496efc3a7f55cf50bc74de7d16b9852d8c80c58b03d02b5f98e2b716d",
+        "schemas/output.schema.json": "64b84ca89036e3c2af93c3184cfac927e468caedd314ae7463e9b5dcc785f029",
+        "src/capability.py": "e929098ad461fb23a65e81c87f58a68d007c539c24218108e9f5882631a1d292",
+        "src/contracts.py": "fd8835ea8d81e610c2748afc35e3ba97a19b7b3ac80632ef50e6d49c53652eba",
+        "src/model_adapter.py": "f6da183af1b9aeb07e1336a615c7160c324e16f36780cb0c772e069681587371",
+        "tests/test_capability.py": "9f7c9fd92cd410ff4d64f462c319617292dad6344625353c748195705d27b281",
+        "tests/test_evals.py": "41eb7095dea528ac4c8c3dea656a5a75f3d51de8ac7a7fb640d490344b07dc34",
     },
 }
 
@@ -179,22 +201,26 @@ def test_invalid_name_creates_nothing(tmp_path, monkeypatch, name):
 
 def test_template_directory_matches_declared_version():
     root = scaffold.template_dir()
-    assert root.name == scaffold.TEMPLATE_VERSION == "0.3.0"
+    assert root.name == scaffold.TEMPLATE_VERSION == "0.4.0"
     assert [p.relative_to(root).as_posix() for p in scaffold.template_sources()] == [
         "README.md.j2",
         "capability.yaml.j2",
         "evals/cases.yaml",
         "evals/evaluator.py",
         "fixtures/sample_input.json",
+        "pricing.yaml",
         "pyproject.toml",
         "requirements.txt",
         "schemas/input.schema.json",
         "schemas/output.schema.json",
         "src/capability.py",
         "src/contracts.py",
+        "src/cost.py",
         "src/model_adapter.py",
+        "src/telemetry.py",
         "tests/test_capability.py",
         "tests/test_evals.py",
+        "tests/test_telemetry.py",
     ]
 
 

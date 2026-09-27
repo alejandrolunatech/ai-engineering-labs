@@ -19,3 +19,15 @@ def blocked_env(tmp_path_factory) -> dict:
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     env.update({"PYTHONPATH": str(stub_root), "PYTHONDONTWRITEBYTECODE": "1"})
     return env
+
+
+def stderr_records(stderr: str) -> list[dict]:
+    """Parse typed JSONL stderr (template 0.4.0+). Every line must be JSON."""
+    import json
+
+    return [json.loads(line) for line in stderr.splitlines() if line.strip()]
+
+
+def only_record(stderr: str, record_type: str) -> dict:
+    [record] = [r for r in stderr_records(stderr) if r["record"] == record_type]
+    return record

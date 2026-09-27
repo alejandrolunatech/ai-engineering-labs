@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:schema:telemetry-record:v1",
+  "title": "Telemetry span record (ai.platform/v1)",
+  "description": "OpenTelemetry-style span record emitted by a capability run. This is a structured telemetry contract, not an OpenTelemetry SDK or exporter format. Attribute objects are closed allowlists: raw input, prompts, model output, file paths, exception messages, and free-form maps are deliberately not representable.",
+  "$comment": "Keep the allowlist small. Do not add a generic map such as metadata, labels or custom.attributes: it would bypass the contract. A released version of this schema must not be mutated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record",
+    "name",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
+    "correlation_id",
+    "start_time_unix_ns",
+    "duration_ms",
+    "status",
+    "attributes",
+    "events"
+  ],
+  "properties": {
+    "record": { "const": "span" },
+    "name": { "enum": ["capability.run", "capability.model_request"] },
+    "trace_id": { "$ref": "#/$defs/identifier" },
+    "span_id": { "type": "string", "pattern": "^[0-9]{1,6}$" },
+    "parent_span_id": { "type": ["string", "null"], "pattern": "^[0-9]{1,6}$" },
+    "correlation_id": { "$ref": "#/$defs/identifier" },
+    "start_time_unix_ns": { "type": "integer", "minimum": 0 },
+    "duration_ms": { "type": "number", "minimum": 0 },
+    "status": { "enum": ["ok", "error"] },
+    "attributes": { "type": "object" },
+    "events": { "type": "array" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "name": { "const": "capability.run" } } },
+      "then": {
+        "properties": {
+          "parent_span_id": { "type": "null" },
+          "attributes": { "$ref": "#/$defs/runAttributes" },
+          "events": { "type": "array", "maxItems": 1, "items": { "$ref": "#/$defs/inputValidationEvent" } }
+        }
+      },
+      "else": {
+        "properties": {
+          "parent_span_id": { "type": "string" },
+          "attributes": { "$ref": "#/$defs/modelRequestAttributes" },
+          "events": { "type": "array", "maxItems": 0 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "description": "Opaque label. Never used for authorization.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+    },
+    "slug": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9]*([_-][a-z0-9]+)*$" },
+    "semver": { "type": "string", "pattern": "^[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}$" },
+    "errorType": {
+      "description": "Exception class name only. Never the exception message or args.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+    },
+    "rules": {
+      "description": "Validation rule names (JSON Schema keywords or runtime rule names). Never the rejected values.",
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z_]{1,40}$" }
+    },
+    "tokenCount": {
+      "description": "null means unknown. Unknown is never represented as 0.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "usageStatus": { "enum": ["known", "partial", "unknown", "no_requests", "invalid_reported"] },
+    "costAttributes": {
+      "type": "object",
+      "properties": {
+        "cost.status": { "enum": ["estimated", "unknown", "no_requests"] },
+        "cost.unknown_reason": {
+          "enum": ["no_pricing", "usage_unknown", "usage_partial", "invalid_usage", null]
+        },
+        "cost.currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+        "cost.estimated": {
+          "description": "Decimal string in cost.currency units; an estimate, not billing. null when unknown.",
+          "type": ["string", "null"],
+          "pattern": "^(0|[0-9]+\\.[0-9]{10})$"
+        }
+      }
+    },
+    "runAttributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_requests.used",
+        "usage.status",
+        "usage.input_tokens",
+        "usage.output_tokens",
+        "cost.status",
+        "cost.unknown_reason",
+        "cost.currency",
+        "cost.estimated"
+      ],
+      "allOf": [{ "$ref": "#/$defs/costAttributes" }],
+      "properties": {
+        "capability.name": { "$ref": "#/$defs/slug" },
+        "capability.version": { "$ref": "#/$defs/semver" },
+        "capability.template_version": { "$ref": "#/$defs/semver" },
+        "capability.model.declared_adapter": { "$ref": "#/$defs/slug" },
+        "capability.model.declared_profile": { "enum": ["fast", "balanced", "deep"] },
+        "capability.budget.max_model_requests": { "type": "integer", "minimum": 1 },
+        "capability.budget.max_latency_ms": { "type": "integer", "minimum": 1 },
+        "capability.data.sensitivity": { "enum": ["synthetic", "public", "internal", "confidential"] },
+        "eval.run_id": { "$ref": "#/$defs/identifier" },
+        "eval.case_id": { "$ref": "#/$defs/slug" },
+        "eval.suite_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "eval.adapter_source": { "enum": ["manifest", "scripted"] },
+        "error.type": { "$ref": "#/$defs/errorType" },
+        "model_requests.used": { "type": "integer", "minimum": 0 },
+        "latency.over_declared_max": {
+          "description": "Observation only: max_latency_ms is not enforced.",
+          "type": "boolean"
+        },
+        "usage.status": { "$ref": "#/$defs/usageStatus" },
+        "usage.input_tokens": { "$ref": "#/$defs/tokenCount" },
+        "usage.output_tokens": { "$ref": "#/$defs/tokenCount" },
+        "cost.status": true,
+        "cost.unknown_reason": true,
+        "cost.currency": true,
+        "cost.estimated": true
+      }
+    },
+    "modelRequestAttributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_request.attempt",
+        "model_request.outcome",
+        "adapter.name",
+        "adapter.reported_model",
+        "usage.status",
+        "usage.input_tokens",
+        "usage.output_tokens",
+        "cost.status",
+        "cost.unknown_reason",
+        "cost.currency",
+        "cost.estimated"
+      ],
+      "allOf": [{ "$ref": "#/$defs/costAttributes" }],
+      "properties": {
+        "model_request.attempt": { "type": "integer", "minimum": 1 },
+        "model_request.outcome": { "enum": ["output_valid", "output_invalid", "adapter_error"] },
+        "adapter.name": { "$ref": "#/$defs/slug" },
+        "adapter.reported_model": {
+          "description": "Adapter-reported, untrusted label; 'unrecognized' if it fails the allowed format; null when no response.",
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9._:/@-]{1,128}$"
+        },
+        "output_validation.failed_rules": { "$ref": "#/$defs/rules" },
+        "error.type": { "$ref": "#/$defs/errorType" },
+        "usage.status": { "enum": ["known", "partial", "unknown", "invalid_reported"] },
+        "usage.input_tokens": { "$ref": "#/$defs/tokenCount" },
+        "usage.output_tokens": { "$ref": "#/$defs/tokenCount" },
+        "cost.status": true,
+        "cost.unknown_reason": true,
+        "cost.currency": true,
+        "cost.estimated": true
+      }
+    },
+    "inputValidationEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "attributes"],
+      "properties": {
+        "name": { "const": "input_validation" },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input_validation.result", "input_validation.failed_rules"],
+          "properties": {
+            "input_validation.result": { "enum": ["passed", "failed"] },
+            "input_validation.failed_rules": { "$ref": "#/$defs/rules" }
+          }
+        }
+      }
+    }
+  }
+}

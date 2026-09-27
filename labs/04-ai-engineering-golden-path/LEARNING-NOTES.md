@@ -733,17 +733,228 @@ declared.
 
 ## Observability and cost
 
+Evidence:
+- **Template:** `templates/capability/0.4.0/`, which adds `src/telemetry.py`,
+  `src/cost.py`, `pricing.yaml`, `tests/test_telemetry.py`, and snapshots of
+  the new canonical `schemas/telemetry-record.schema.json` and
+  `schemas/pricing.schema.json`.
+- **Platform tests:** `tests/test_template_observability.py` (14 tests). The
+  full Lab 04 suite is 250 tests, all passing.
+- **Manual run outside the repo:** `ai-golden-path new observable-demo`
+  recorded `template_version: "0.4.0"`, and its generated `pytest` passed 94
+  tests: 32 runtime, 28 eval, 34 telemetry.
+
+**Template chain:** 0.1.0 contract → 0.2.0 runtime → 0.3.0 eval kit → 0.4.0
+observability. 0.3.0 was frozen with all 14 file digests in
+`FROZEN_TEMPLATES`.
+
+### This is OpenTelemetry-style telemetry, not a deployed OpenTelemetry system
+
+`src/telemetry.py` is about 200 lines of standard library. It produces
+span-like records (`trace_id`, `span_id`, `parent_span_id`,
+`start_time_unix_ns`, `duration_ms`, `status`, `attributes`, `events`) that
+follow OTel concepts. There is no OTel SDK, exporter, collector or backend,
+and nothing goes over the network. An `OTelSink` bridge is documented in the
+module docstring but **not implemented**.
+
 ### What is recorded?
 
-_Write here._
+- One root `capability.run` span with an `input_validation` event.
+- One `capability.model_request` span per attempted adapter call, with the
+  output-validation outcome on it.
 
-### What remains unknown?
+From `ai-golden-path new observable-demo` then
+`python src/capability.py fixtures/sample_input.json --correlation-id manual-phase5`:
+- **stdout:** exactly the `CapabilityResult`, with no telemetry in it.
+- **stderr:** two typed `{"record":"span"}` lines, the model-request span
+  followed by the root span.
 
-_Write here._
+**Root span (`capability.run`):**
+
+| Field | Value | Kind |
+|---|---|---|
+| `correlation_id` | `manual-phase5` | caller-supplied correlation label |
+| `trace_id` | random hex | one per run |
+| `span_id` / `parent_span_id` | `1` / null | root |
+| `start_time_unix_ns` | wall clock | placement in time only |
+| `duration_ms` | ~16.7 | monotonic: the whole run, including manifest, pricing and schema loading |
+| `status` | `ok` | runtime |
+| `capability.name` / `version` / `template_version` | `observable-demo` / `0.1.0` / `0.4.0` | declared |
+| `capability.model.declared_adapter` / `declared_profile` | `fake` / `balanced` | declared |
+| `capability.budget.max_model_requests` / `max_latency_ms` | 2 / 5000 | declared |
+| `capability.data.sensitivity` | `synthetic` | declared label |
+| `model_requests.used` | 1 | runtime, from the enforced counter |
+| `latency.over_declared_max` | false | observation only |
+| `usage.status`, input/output tokens | `unknown`, null, null | adapter-reported; unknown |
+| `cost.status` / `unknown_reason` / `currency` / `estimated` | `unknown` / `no_pricing` / null / null | derived |
+| event `input_validation` | `result: passed`, `failed_rules: []` | runtime |
+
+**Model-request span:**
+
+| Field | Value | Kind |
+|---|---|---|
+| `span_id` / `parent_span_id` | `2` / `1` | child of the root |
+| `duration_ms` | ~0.17 | the attempt: adapter call plus output validation |
+| `model_request.attempt` | 1 | runtime |
+| `adapter.name` | `fake` | runtime |
+| `adapter.reported_model` | `fake-deterministic-v2` | adapter-reported and untrusted; checked against a restricted pattern, otherwise `unrecognized` |
+| `model_request.outcome` | `output_valid` | runtime |
+| usage and cost fields | unknown / `no_pricing` | per request |
+
+**Correlation.**
+- The command line accepts `--correlation-id`, or generates one when absent.
+  The evaluator uses one ID per execution as `eval.run_id`, and each case's
+  root span adds `eval.case_id`, `eval.suite_sha256` and
+  `eval.adapter_source`.
+- Correlation IDs are validated labels (`[A-Za-z0-9._:-]{1,128}`). They never
+  affect authorization and never enter the `CapabilityResult` or the
+  `EvalReport`.
+- Two evaluator runs with `--correlation-id eval-run-1` and `eval-run-2`
+  produced a **byte-identical EvalReport** on stdout (10,126 bytes, same
+  SHA-256).
+- Their stderr telemetry differed: run IDs, trace IDs and durations.
+- Each run emitted 16 typed records: 8 root spans, 7 request spans and one
+  `eval_summary`. Telemetry joins the report through `eval.suite_sha256` plus
+  `eval.case_id`, and that join was verified.
+
+**stderr is always machine-readable.** It holds only `span`, `error` and
+`eval_summary` records. The evaluator's Phase 4 plain-text summary line was
+replaced by a typed `eval_summary` record. `--telemetry-file PATH` appends
+spans to an explicit file instead. A test shows the default run creates no
+files, and an unwritable telemetry path makes the command refuse to run
+(exit 5).
+
+### What remains unknown? (unknown != zero)
+
+- **Default fake usage is unknown, not zero.** Both spans show
+  `usage.status: unknown` with null token counts. The fake tokenizes
+  nothing, so it reports nothing. A mutation that reports unknown as `0` is
+  caught.
+- **Partial usage produces no total.** A synthetic retry where attempt 1
+  reported `100/10` tokens and attempt 2 reported nothing gave per-request
+  evidence of `known` then `unknown`, but a **root of `usage.status: partial`
+  with null totals and `cost.status: unknown` (`usage_partial`)**.
+  Mutations that sum the known part, or cost only the known attempts, are
+  caught.
+- **An adapter exception means unknown usage** for that attempt, because no
+  response arrived, even though a real provider might still have billed.
+- **Invalid reported usage** (negative, a bool, a float, not a `Usage`
+  object) gives `usage.status: invalid_reported` and cost `invalid_usage`.
+  The business result still succeeds: observability never changes the
+  outcome.
+- **The known zero.** Invalid input (a missing `summary`) gave exit 2,
+  `model_requests.used: 0`, `usage.status: no_requests`, tokens `(0, 0)`,
+  `cost.status: no_requests`, `cost.estimated: "0"`. This doesn't break
+  "unknown != zero": the zero is *proven* by the enforced request counter,
+  because the adapter was never called. It isn't assumed from missing data.
+  A mutation that reports this case as null is caught.
+
+### Cost: estimate, not billing
+
+- **Where prices live.** `pricing.yaml` is outside `capability.yaml`
+  (validated against `platform/pricing.schema.json`), and the template ships
+  with `prices: []`. Prices are decimal strings per 1,000,000 tokens,
+  computed in `Decimal` and rounded once at the end to 10 places
+  (`ROUND_HALF_EVEN`).
+- **Matching.** A price applies only on an exact adapter plus reported-model
+  match.
+- **Currency.** `currency` is only checked to be ISO-4217-shaped; the schema
+  does not prove it's a real currency.
+- **Synthetic test evidence** (invented price and token counts, not real):
+  1,200 input and 300 output tokens at 0.50 / 1.50 USD per million gave
+  `cost.status: estimated`, `cost.estimated: "0.0010500000"` (0.0006 +
+  0.00045).
+- **No partial cost.** Cost is unknown whenever pricing is missing, usage is
+  incomplete, or usage is invalid. It is never estimated from part of the
+  usage.
+- **Only as trustworthy as the adapter.** Pricing keys on the
+  adapter-reported model label, so the estimate is only as trustworthy as
+  that report. **Adapter-reported usage and model metadata are evidence, not
+  authority.** Neither is used for authorization.
+
+### Latency: measurement != enforcement
+
+- **What's measured.** Durations use a monotonic clock: the whole run on the
+  root span, and each attempt on its request span.
+- **`max_latency_ms` is not enforced.** The root records
+  `latency.over_declared_max` as an observation. With `max_latency_ms: 1` and
+  a fake clock, the flag was `true` and the run still succeeded. A mutation
+  that turns the observation into enforcement is caught.
+- **Honesty.** Synthetic, local, fake-adapter durations say nothing about
+  production latency.
 
 ### Sensitive data intentionally excluded
 
-_Write here._
+- **Enforced in code, not by convention.** The telemetry contract is a
+  closed allowlist (`additionalProperties: false`) with no generic
+  `metadata`, `labels` or `custom.attributes` map. Every record is checked
+  against it before delivery.
+- **Tested rejections:** `change.title`, `metadata: {}`, `labels: {}`,
+  `custom.attributes`, `input.summary` and `exception.message` are each
+  rejected (`TelemetryContractError`). A control test shows that the same
+  span without the extra key is valid.
+- **Never recorded:** raw input, title, summary, file paths, `change_id`,
+  instructions or prompts, model output, exception messages or args,
+  environment variables, usernames, hostnames, absolute paths, credentials.
+  For validation failures only rule names are recorded (`required`,
+  `pattern`, `strict_json`), never rejected values.
+- **Checks against real payloads:**
+  - the fixture's title, summary, all three file paths and `change_id` were
+    absent from the manual run's telemetry;
+  - marker values placed in input, model output and an adapter exception
+    message were absent in every scenario test;
+  - a mutation that records the payload's `change_id` in an allowed
+    identifier attribute is caught by the marker test;
+  - a mutation that records the exception text as `error.type` is caught.
+
+### Telemetry delivery is separate from the capability outcome
+
+Three concerns are kept separate:
+- **Capability outcome:** decided by `run()`.
+- **Record validity:** `TelemetryContractError` is a programming error and
+  fails tests loudly.
+- **Record delivery:** `TelemetryDeliveryError` is collected and **never
+  raised into the flow**. A sink writing to a closed stream still returned
+  the result after exactly one adapter call, with no retry. The command
+  exits 5, meaning "outcome stands, evidence incomplete". A mutation that
+  raises delivery failures into the run is caught.
+
+This matters more once Phase 6 introduces side effects: a telemetry failure
+must never cause a second execution. Delivery is not durable, not crash-safe
+(records are written when a span ends), and **telemetry is not tamper-proof
+audit evidence**. It's plain JSONL that anyone with write access can edit.
+
+**Mutation evidence.** Each change below was applied to a generated copy and
+the generated `tests/test_telemetry.py` run against it. All nine were caught:
+- unknown usage reported as 0;
+- partial usage summed into a total;
+- partial cost estimated from known attempts;
+- zero requests reported as null;
+- a payload ID recorded in an allowed attribute;
+- delivery failure raised into the run;
+- an exception message recorded as `error.type`;
+- `max_latency_ms` enforced;
+- an unrecognized model label passed through.
+
+Most are caught by a single test, so coverage is thin.
+
+### What Phase 5 proves and does not prove
+
+It proves that structured evidence (declared configuration, request counts,
+local durations, adapter-reported usage and model labels, cost estimates
+only when justified, and correlation) was produced on success and failure
+paths **under these test conditions**, without the declared payload fields.
+
+It does **not** prove:
+- semantic correctness;
+- complete or honest provider usage;
+- billing accuracy;
+- real production latency;
+- that unknown usage is zero;
+- crash-safe telemetry delivery;
+- tamper resistance;
+- `max_latency_ms` enforcement;
+- production-grade OpenTelemetry infrastructure.
 
 ---
 

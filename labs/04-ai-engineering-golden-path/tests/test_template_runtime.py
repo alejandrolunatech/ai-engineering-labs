@@ -23,10 +23,11 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
+from conftest import only_record
 from golden_path import scaffold
 
 CAPABILITY = "runtime-demo"
-GENERATED_MODULES = {"capability", "contracts", "model_adapter", "evaluator"}
+GENERATED_MODULES = {"capability", "contracts", "model_adapter", "evaluator", "telemetry", "cost"}
 ALLOWED_THIRD_PARTY = {"jsonschema", "yaml", "pytest"}
 FORBIDDEN_IN_SRC = {
     "golden_path",
@@ -178,7 +179,7 @@ def test_cli_invalid_input_exits_2_without_result_or_echo(project, blocked_env, 
     assert completed.returncode == 2
     assert completed.stdout == ""
     assert marker not in completed.stderr
-    error = json.loads(completed.stderr)
+    error = only_record(completed.stderr, "error")
     assert error["error"] == "InputValidationError"
     assert error["model_requests_used"] == 0
 
@@ -210,6 +211,6 @@ def test_cli_invalid_manifest_exits_3_before_model(tmp_path, blocked_env, origin
     completed = run_cli(destination, blocked_env, "fixtures/sample_input.json")
     assert completed.returncode == 3, completed.stderr
     assert completed.stdout == ""
-    error = json.loads(completed.stderr)
+    error = only_record(completed.stderr, "error")
     assert expected in error["message"]
     assert error["model_requests_used"] == 0

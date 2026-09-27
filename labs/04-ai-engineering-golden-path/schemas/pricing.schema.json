@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:schema:pricing:v1",
+  "title": "Model pricing (ai.platform/v1)",
+  "description": "Explicit, inspectable prices used only to ESTIMATE cost in telemetry. Estimates are not billing. Pricing lives outside capability.yaml because prices are deployment/provider facts, not part of the capability contract.",
+  "$comment": "A released version of this schema must not be mutated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "kind", "currency", "prices"],
+  "properties": {
+    "api_version": { "const": "ai.platform/v1" },
+    "kind": { "const": "Pricing" },
+    "currency": {
+      "description": "ISO-4217-SHAPED code (three uppercase letters). The schema does not verify that the code is a real currency.",
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "prices": {
+      "description": "An empty list means no prices: cost is reported as unknown, never as zero.",
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/price" }
+    }
+  },
+  "$defs": {
+    "price": {
+      "description": "Applies only on an exact match of adapter name and adapter-reported model label.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "model", "input_per_million_tokens", "output_per_million_tokens"],
+      "properties": {
+        "adapter": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9]*([_-][a-z0-9]+)*$" },
+        "model": { "type": "string", "pattern": "^[A-Za-z0-9._:/@-]{1,128}$" },
+        "input_per_million_tokens": { "$ref": "#/$defs/decimalString" },
+        "output_per_million_tokens": { "$ref": "#/$defs/decimalString" }
+      }
+    },
+    "decimalString": {
+      "description": "Currency units per 1,000,000 tokens, as a quoted decimal string (never a YAML float).",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,12})?$"
+    }
+  }
+}
