@@ -120,11 +120,13 @@ The downstream fixture server should expose four tools:
 ```text
 get_order(order_id)
 search_customer(query)
-issue_refund(order_id, amount_eur, reason)
+issue_refund(order_id, amount_cents, reason)
 export_customer_record(customer_id)
 ```
 
 They intentionally have different risk profiles.
+
+Refund requests use integer minor units (`amount_cents`) across policy and execution. Human-facing examples may still describe €25/€50, but the authorization boundary never relies on binary floating-point euros.
 
 ### Data and action classes
 
@@ -316,7 +318,7 @@ Policy input should be structured, for example:
   },
   "arguments": {
     "order_id": "ord-1003",
-    "amount_eur": 45,
+    "amount_cents": 4500,
     "reason": "duplicate charge"
   },
   "environment": "lab",
@@ -495,6 +497,23 @@ BLOCKER
 IMPORTANT
 NICE-TO-HAVE
 ```
+
+---
+
+## Phase 9.5 — Hardening after independent review
+
+The independent review showed that correct gateway enforcement can still enforce an unsafe or incomplete policy. A focused hardening pass therefore:
+
+- changed refund authorization/execution to integer cents, removing fractional-euro rounding ambiguity;
+- added a permanent regression showing that prompt injection can execute a harmful request that stays inside the caller's legitimate €50 authority;
+- clarified that audit format validation reduces obvious log injection but does not prove an identifier-shaped value is non-sensitive;
+- recorded the major enterprise blockers rather than treating green tests as production readiness.
+
+### Enterprise blockers identified by the independent review
+
+Before protecting real enterprise systems, the architecture still needs authenticated principal provenance, an enforced deployment boundary around the downstream service, action/resource-scoped and replay-resistant approvals, resource/tenant/case authorization plus cumulative budgets, and protection of the OPA policy control plane. It also needs stronger deployed-policy provenance, durable executor-side outcome/idempotency records, and production-grade audit integrity.
+
+These are intentionally documented gaps, not claims that the lab already solves them.
 
 ---
 

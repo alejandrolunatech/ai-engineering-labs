@@ -11,7 +11,7 @@
 #   arguments                     UNTRUSTED requested by the model
 #
 # Authority is only ever read from trusted fields. From `arguments` the policy
-# reads exactly two values, amount_eur and reason, and only to *constrain* a
+# reads exactly two values, amount_cents and reason, and only to *constrain* a
 # refund. Nothing inside `arguments` can grant a permission.
 package gateway
 
@@ -32,10 +32,10 @@ role_tools := {
 	"compliance": {"get_order", "search_customer", "export_customer_record"},
 }
 
-# Inclusive upper bound in EUR.
-refund_limits := {
-	"support": 50,
-	"finance": 500,
+# Inclusive upper bound in integer cents: €50 and €500.
+refund_limits_cents := {
+	"support": 5000,
+	"finance": 50000,
 }
 
 # --- Decision ---------------------------------------------------------------
@@ -77,7 +77,7 @@ decision := {
 	not valid_refund_amount
 } else := {
 	"allow": false,
-	"reason": sprintf("refund amount exceeds the %v EUR limit for role '%s'", [refund_limits[role], role]),
+	"reason": sprintf("refund amount exceeds the %v cent limit for role '%s'", [refund_limits_cents[role], role]),
 	"rule_id": "deny.refund.over_limit",
 } if {
 	tool == "issue_refund"
@@ -154,13 +154,14 @@ tool_conditions_met if {
 # --- Refund argument constraints (untrusted values, used only to restrict) --
 
 valid_refund_amount if {
-	is_number(input.arguments.amount_eur)
-	input.arguments.amount_eur > 0
+	is_number(input.arguments.amount_cents)
+	input.arguments.amount_cents > 0
+	input.arguments.amount_cents == floor(input.arguments.amount_cents)
 }
 
 refund_within_limit if {
 	valid_refund_amount
-	input.arguments.amount_eur <= refund_limits[role]
+	input.arguments.amount_cents <= refund_limits_cents[role]
 }
 
 valid_refund_reason if {

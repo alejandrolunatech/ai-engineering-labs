@@ -20,7 +20,7 @@ can later put a policy gateway in front of it.
 Expose exactly these tools:
 1. get_order(order_id)
 2. search_customer(query)
-3. issue_refund(order_id, amount_eur, reason)
+3. issue_refund(order_id, amount_cents, reason)
 4. export_customer_record(customer_id)
 
 Constraints:

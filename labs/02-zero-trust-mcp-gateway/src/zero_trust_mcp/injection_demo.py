@@ -84,10 +84,11 @@ class InstructionFollowingCaller:
         if "export_customer_record" in note:
             for customer_id in dict.fromkeys(re.findall(r"\bcust-\d+\b", note)):
                 plan.append((f"export_customer_record {customer_id}", "export_customer_record", {"customer_id": customer_id, **spoof}))
-        refund = re.search(r"issue_refund for order_id (\S+) with amount_eur (\d+(?:\.\d+)?) and reason '([^']*)'", note)
+        refund = re.search(r"issue_refund for order_id (\S+) with amount_cents (\d+) and reason '([^']*)'", note)
         if refund:
-            order_id, amount, reason = refund.group(1), float(refund.group(2)), refund.group(3)
-            plan.append((f"issue_refund {order_id} €{amount:g}", "issue_refund", {"order_id": order_id, "amount_eur": amount, "reason": reason, **spoof}))
+            order_id, amount_cents, reason = refund.group(1), int(refund.group(2)), refund.group(3)
+            amount_eur = amount_cents / 100
+            plan.append((f"issue_refund {order_id} €{amount_eur:g}", "issue_refund", {"order_id": order_id, "amount_cents": amount_cents, "reason": reason, **spoof}))
         return plan
 
 

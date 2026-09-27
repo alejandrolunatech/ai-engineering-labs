@@ -14,7 +14,7 @@ def test_get_order_returns_order_with_refund_total(store):
     order = store.get_order("ord-1001")
     assert order["customer_id"] == "cust-001"
     assert order["total_eur"] == 39.9
-    assert order["refunded_eur"] == 0
+    assert order["refunded_cents"] == 0
 
 
 def test_get_order_unknown_raises(store):
@@ -49,42 +49,42 @@ def test_search_customer_blank_or_no_match_returns_empty(store):
 
 
 def test_issue_refund_mutates_in_memory_state(store):
-    result = store.issue_refund("ord-1003", 45, "duplicate charge")
+    result = store.issue_refund("ord-1003", 4500, "duplicate charge")
     assert result["refund_id"] == "rf-0001"
-    assert result["amount_eur"] == 45
-    assert result["refundable_remaining_eur"] == 45
-    assert store.get_order("ord-1003")["refunded_eur"] == 45
+    assert result["amount_cents"] == 4500
+    assert result["refundable_remaining_cents"] == 4500
+    assert store.get_order("ord-1003")["refunded_cents"] == 4500
     assert len(store.refunds) == 1
 
 
 def test_issue_refund_allows_exact_remaining_balance_then_blocks(store):
-    store.issue_refund("ord-1001", 19.95, "one mug broken")
-    store.issue_refund("ord-1001", 19.95, "second mug broken")
+    store.issue_refund("ord-1001", 1995, "one mug broken")
+    store.issue_refund("ord-1001", 1995, "second mug broken")
     with pytest.raises(CommerceError, match="exceeds refundable balance"):
-        store.issue_refund("ord-1001", 0.01, "more")
+        store.issue_refund("ord-1001", 1, "more")
 
 
 def test_issue_refund_over_total_raises_and_records_nothing(store):
     with pytest.raises(CommerceError, match="exceeds refundable balance"):
-        store.issue_refund("ord-1001", 40.0, "too much")
+        store.issue_refund("ord-1001", 4000, "too much")
     assert store.refunds == []
 
 
-@pytest.mark.parametrize("amount", [0, -5, float("nan")])
+@pytest.mark.parametrize("amount", [0, -5, 1.5, float("nan"), True])
 def test_issue_refund_rejects_non_positive_amounts(store, amount):
-    with pytest.raises(CommerceError, match="must be positive"):
+    with pytest.raises(CommerceError, match="positive integer"):
         store.issue_refund("ord-1001", amount, "bad amount")
     assert store.refunds == []
 
 
 def test_issue_refund_unknown_order_raises(store):
     with pytest.raises(CommerceError, match="unknown order_id"):
-        store.issue_refund("ord-9999", 10, "x")
+        store.issue_refund("ord-9999", 1000, "x")
 
 
 def test_issue_refund_accepts_empty_reason_because_server_has_no_policy(store):
     # Documents the gap the gateway must close: downstream does not require a reason.
-    store.issue_refund("ord-1003", 5, "")
+    store.issue_refund("ord-1003", 500, "")
     assert store.refunds[0]["reason"] == ""
 
 
@@ -105,7 +105,7 @@ def test_export_unknown_customer_raises_and_records_nothing(store):
 
 def test_stores_are_independent_and_seed_file_is_not_written(store):
     before = SEED_PATH.read_bytes()
-    store.issue_refund("ord-1003", 10, "partial")
+    store.issue_refund("ord-1003", 1000, "partial")
     store.customers["cust-001"]["email"] = "mutated@example.test"
     fresh = CommerceStore.from_seed()
     assert fresh.refunds == []

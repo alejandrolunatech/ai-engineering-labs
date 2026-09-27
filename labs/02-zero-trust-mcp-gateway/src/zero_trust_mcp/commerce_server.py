@@ -48,9 +48,9 @@ def build_server(store: CommerceStore | None = None) -> MCPServer:
         return _call(store.search_customer, query)
 
     @server.tool(annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=False))
-    def issue_refund(order_id: str, amount_eur: float, reason: str) -> dict[str, Any]:
+    def issue_refund(order_id: str, amount_cents: int, reason: str) -> dict[str, Any]:
         """Refund part or all of an order to the customer (synthetic lab state only)."""
-        return _call(store.issue_refund, order_id, amount_eur, reason)
+        return _call(store.issue_refund, order_id, amount_cents, reason)
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=True))
     def export_customer_record(customer_id: str) -> dict[str, Any]:

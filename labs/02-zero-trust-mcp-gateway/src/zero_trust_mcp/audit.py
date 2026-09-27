@@ -20,9 +20,12 @@ authority for that.
 What is never logged: argument values other than id-shaped order_id /
 customer_id and numeric amount_eur; free text (reason, query, notes);
 values of spoofed authority fields; downstream results; exception messages.
-Everything the caller controls (tool name, argument key names, id values) is
-validated against a strict pattern before it is written, so it cannot be
-used to smuggle PII or injected text into the log.
+Caller-controlled strings are format-checked before selected values are
+written, which reduces obvious free-text injection into the log. Shape is not
+a sensitivity classifier, however: an identifier-shaped value may still be
+sensitive. Treat audit storage as sensitive; a production system should bind
+resource IDs to trusted state or pseudonymize them rather than assuming a
+regex proves that a value is safe.
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 SAFE_ID_FIELDS = ("order_id", "customer_id")
-SAFE_NUMBER_FIELDS = ("amount_eur",)
+SAFE_NUMBER_FIELDS = ("amount_cents",)
 SPOOFABLE_AUTHORITY_KEYS = frozenset({"role", "is_admin", "human_approved", "principal", "principal_id", "admin"})
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")  # argument key names

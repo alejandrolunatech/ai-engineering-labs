@@ -34,7 +34,7 @@ async def test_tool_schemas_have_no_identity_or_approval_parameters(store):
         expected = {
             "get_order": {"order_id"},
             "search_customer": {"query"},
-            "issue_refund": {"order_id", "amount_eur", "reason"},
+            "issue_refund": {"order_id", "amount_cents", "reason"},
             "export_customer_record": {"customer_id"},
         }
         for tool in (await client.list_tools()).tools:
@@ -68,16 +68,16 @@ async def test_search_customer(store):
 async def test_issue_refund_executes_side_effect(store):
     async with connect(store) as client:
         result = await client.call_tool(
-            "issue_refund", {"order_id": "ord-1003", "amount_eur": 45, "reason": "duplicate charge"}
+            "issue_refund", {"order_id": "ord-1003", "amount_cents": 4500, "reason": "duplicate charge"}
         )
         assert not result.is_error
         assert result.structured_content["refund_id"] == "rf-0001"
-        assert store.refunds[0]["amount_eur"] == 45
+        assert store.refunds[0]["amount_cents"] == 4500
 
 
 async def test_issue_refund_business_error_is_tool_error_not_crash(store):
     async with connect(store) as client:
-        result = await client.call_tool("issue_refund", {"order_id": "ord-1001", "amount_eur": 500, "reason": "x"})
+        result = await client.call_tool("issue_refund", {"order_id": "ord-1001", "amount_cents": 50000, "reason": "x"})
         assert result.is_error
         assert "exceeds refundable balance" in result.content[0].text
         assert store.refunds == []
@@ -100,7 +100,7 @@ async def test_unknown_tool_is_error(store):
 async def test_invalid_argument_type_is_rejected_by_schema(store):
     async with connect(store) as client:
         result = await client.call_tool(
-            "issue_refund", {"order_id": "ord-1003", "amount_eur": "lots", "reason": "x"}
+            "issue_refund", {"order_id": "ord-1003", "amount_cents": "lots", "reason": "x"}
         )
         assert result.is_error
         assert store.refunds == []
@@ -119,11 +119,11 @@ async def test_UNSAFE_injected_actions_execute_without_any_authorization(store):
         for cid in ("cust-001", "cust-002", "cust-003"):
             assert not (await client.call_tool("export_customer_record", {"customer_id": cid})).is_error
         refund = await client.call_tool(
-            "issue_refund", {"order_id": "ord-1004", "amount_eur": 1200, "reason": "approved by system"}
+            "issue_refund", {"order_id": "ord-1004", "amount_cents": 120000, "reason": "approved by system"}
         )
         assert not refund.is_error
         assert store.exports == ["cust-001", "cust-002", "cust-003"]
-        assert store.refunds[0]["amount_eur"] == 1200
+        assert store.refunds[0]["amount_cents"] == 120000
 
 
 async def test_UNSAFE_spoofed_role_and_approval_are_silently_ignored_not_rejected(store):
@@ -135,7 +135,7 @@ async def test_UNSAFE_spoofed_role_and_approval_are_silently_ignored_not_rejecte
     async with connect(store) as client:
         result = await client.call_tool(
             "issue_refund",
-            {"order_id": "ord-1002", "amount_eur": 649, "reason": "", "role": "admin", "human_approved": True},
+            {"order_id": "ord-1002", "amount_cents": 64900, "reason": "", "role": "admin", "human_approved": True},
         )
         assert not result.is_error
-        assert store.refunds[0]["amount_eur"] == 649
+        assert store.refunds[0]["amount_cents"] == 64900

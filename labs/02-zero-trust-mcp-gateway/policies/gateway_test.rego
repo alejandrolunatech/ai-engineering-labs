@@ -18,7 +18,7 @@ approved(r) := object.union(r, {"human_approved": true})
 # object.union merges nested objects recursively, so remove first to replace.
 with_principal(r, p) := object.union(object.remove(r, ["principal"]), {"principal": p})
 
-refund(role, amount, reason) := req(role, "issue_refund", {"order_id": "ord-1003", "amount_eur": amount, "reason": reason})
+refund(role, amount_eur, reason) := req(role, "issue_refund", {"order_id": "ord-1003", "amount_cents": amount_eur * 100, "reason": reason})
 
 export(role) := req(role, "export_customer_record", {"customer_id": "cust-001"})
 
@@ -149,9 +149,13 @@ test_refund_zero_denied if denied(refund("support", 0, "duplicate charge"), "den
 
 test_refund_negative_denied if denied(refund("finance", -10, "duplicate charge"), "deny.refund.invalid_amount")
 
-test_refund_amount_as_string_denied if denied(refund("support", "25", "duplicate charge"), "deny.refund.invalid_amount")
+test_refund_fractional_cent_denied if {
+	denied(req("support", "issue_refund", {"order_id": "ord-1003", "amount_cents": 0.1, "reason": "duplicate charge"}), "deny.refund.invalid_amount")
+}
 
-test_refund_amount_null_denied if denied(refund("support", null, "duplicate charge"), "deny.refund.invalid_amount")
+test_refund_amount_as_string_denied if denied(req("support", "issue_refund", {"order_id": "ord-1003", "amount_cents": "2500", "reason": "duplicate charge"}), "deny.refund.invalid_amount")
+
+test_refund_amount_null_denied if denied(req("support", "issue_refund", {"order_id": "ord-1003", "amount_cents": null, "reason": "duplicate charge"}), "deny.refund.invalid_amount")
 
 test_refund_amount_missing_denied if {
 	denied(req("support", "issue_refund", {"order_id": "ord-1003", "reason": "duplicate charge"}), "deny.refund.invalid_amount")
@@ -172,7 +176,7 @@ test_refund_non_string_reason_denied if denied(refund("support", 25, 123), "deny
 test_refund_null_reason_denied if denied(refund("support", 25, null), "deny.refund.missing_reason")
 
 test_refund_missing_reason_denied if {
-	denied(req("finance", "issue_refund", {"order_id": "ord-1003", "amount_eur": 25}), "deny.refund.missing_reason")
+	denied(req("finance", "issue_refund", {"order_id": "ord-1003", "amount_cents": 2500}), "deny.refund.missing_reason")
 }
 
 # --- export_customer_record -----------------------------------------------------
@@ -202,11 +206,11 @@ test_export_denied_for_other_roles_even_with_trusted_approval if {
 # --- Model-controlled arguments cannot grant authority ------------------------
 
 test_arguments_role_admin_does_not_escalate_auditor if {
-	denied(req("auditor", "issue_refund", {"order_id": "ord-1003", "amount_eur": 10, "reason": "x", "role": "admin"}), "deny.tool_not_permitted_for_role")
+	denied(req("auditor", "issue_refund", {"order_id": "ord-1003", "amount_cents": 1000, "reason": "x", "role": "admin"}), "deny.tool_not_permitted_for_role")
 }
 
 test_arguments_role_finance_does_not_raise_support_limit if {
-	denied(req("support", "issue_refund", {"order_id": "ord-1003", "amount_eur": 250, "reason": "x", "role": "finance"}), "deny.refund.over_limit")
+	denied(req("support", "issue_refund", {"order_id": "ord-1003", "amount_cents": 25000, "reason": "x", "role": "finance"}), "deny.refund.over_limit")
 }
 
 test_arguments_is_admin_does_not_escalate if {
@@ -223,7 +227,7 @@ test_arguments_principal_does_not_override_trusted_principal if {
 }
 
 test_arguments_refund_limit_override_ignored if {
-	denied(req("support", "issue_refund", {"order_id": "ord-1003", "amount_eur": 1200, "reason": "x", "refund_limit": 5000}), "deny.refund.over_limit")
+	denied(req("support", "issue_refund", {"order_id": "ord-1003", "amount_cents": 120000, "reason": "x", "refund_limit": 5000}), "deny.refund.over_limit")
 }
 
 # The exact payload requested by the ord-1004 prompt-injection fixture.

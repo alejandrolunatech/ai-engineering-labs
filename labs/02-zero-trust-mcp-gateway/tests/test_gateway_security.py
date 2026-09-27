@@ -55,11 +55,11 @@ COMPLIANCE_APPROVED = TrustedContext(principal_id="compliance-3", role="complian
 UNKNOWN_ROLE = TrustedContext(principal_id="root-0", role="superuser")
 NO_PRINCIPAL = TrustedContext(principal_id=None, role=None)
 
-REFUND_SCHEMA_KEYS = {"order_id", "amount_eur", "reason"}
+REFUND_SCHEMA_KEYS = {"order_id", "amount_cents", "reason"}
 
 
-def refund_args(amount: float, reason: str = "duplicate charge", **extra: Any) -> dict[str, Any]:
-    return {"order_id": "ord-1003", "amount_eur": amount, "reason": reason, **extra}
+def refund_args(amount_eur: float, reason: str = "duplicate charge", **extra: Any) -> dict[str, Any]:
+    return {"order_id": "ord-1003", "amount_cents": round(amount_eur * 100), "reason": reason, **extra}
 
 
 def export_args(**extra: Any) -> dict[str, Any]:
@@ -260,7 +260,7 @@ async def test_03_support_refund_25_with_reason_allowed_once(opa):
     out = await call_through_gateway(SUPPORT, opa, "issue_refund", refund_args(25))
     assert_allowed_and_executed_once(out, "issue_refund", "allow.refund.within_limit")
     assert out.store.refunds == [
-        {"refund_id": "rf-0001", "order_id": "ord-1003", "amount_eur": 25.0, "reason": "duplicate charge"}
+        {"refund_id": "rf-0001", "order_id": "ord-1003", "amount_cents": 2500, "reason": "duplicate charge"}
     ]
     assert out.store.exports == []
 
@@ -271,17 +271,17 @@ async def test_04_support_refund_250_denied(opa):
 
 
 async def test_05_finance_refund_250_allowed_once(opa):
-    out = await call_through_gateway(FINANCE, opa, "issue_refund", {"order_id": "ord-1002", "amount_eur": 250, "reason": "damaged"})
+    out = await call_through_gateway(FINANCE, opa, "issue_refund", {"order_id": "ord-1002", "amount_cents": 25000, "reason": "damaged"})
     assert_allowed_and_executed_once(out, "issue_refund", "allow.refund.within_limit")
     assert len(out.store.refunds) == 1
     assert out.store.refunds[0]["order_id"] == "ord-1002"
-    assert out.store.refunds[0]["amount_eur"] == 250.0
+    assert out.store.refunds[0]["amount_cents"] == 25000
 
 
 async def test_06_finance_refund_750_denied(opa):
     # ord-1004 totals 1200 EUR, so the downstream business rule would accept 750:
     # only the policy stands between this request and the side effect.
-    out = await call_through_gateway(FINANCE, opa, "issue_refund", {"order_id": "ord-1004", "amount_eur": 750, "reason": "x"})
+    out = await call_through_gateway(FINANCE, opa, "issue_refund", {"order_id": "ord-1004", "amount_cents": 75000, "reason": "x"})
     assert_denied_without_execution(out, "deny.refund.over_limit")
 
 
@@ -471,7 +471,7 @@ async def test_17_undeclared_arguments_are_not_forwarded_after_allow(opa):
     (_, forwarded) = out.spy.calls[0]
     assert set(forwarded) == REFUND_SCHEMA_KEYS
     assert forwarded == refund_args(25)
-    assert len(out.store.refunds) == 1 and out.store.refunds[0]["amount_eur"] == 25.0
+    assert len(out.store.refunds) == 1 and out.store.refunds[0]["amount_cents"] == 2500
     # The attempt remains visible in the audit trail by key name only.
     requested = out.audit.events[0]
     assert {"role", "human_approved", "principal", "refund_limit"} <= set(requested["argument_keys"])
