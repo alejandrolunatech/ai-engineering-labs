@@ -11,6 +11,7 @@ __pycache__/
 .idea/
 .vscode/
 **/reports/*.json
+**/reports/*.jsonl
 coverage.xml
 htmlcov/
 .coverage

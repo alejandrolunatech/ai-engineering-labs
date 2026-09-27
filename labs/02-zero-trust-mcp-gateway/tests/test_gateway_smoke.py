@@ -11,7 +11,13 @@ from mcp import Client
 
 from src.zero_trust_mcp.audit import AuditLog
 from src.zero_trust_mcp.commerce_server import build_server
-from src.zero_trust_mcp.gateway import Gateway, TrustedContext, build_gateway_server, build_policy_input
+from src.zero_trust_mcp.gateway import (
+    Gateway,
+    TrustedContext,
+    allowlist_downstream_arguments,
+    build_gateway_server,
+    build_policy_input,
+)
 from src.zero_trust_mcp.policy import OpaPolicyClient, PolicyDecision, parse_decision
 from src.zero_trust_mcp.store import CommerceStore
 
@@ -81,6 +87,30 @@ async def test_spoofed_fields_stay_inside_untrusted_arguments():
     assert sent["principal"] == {"id": "support-42", "role": "support"}
     assert sent["human_approved"] is False
     assert sent["arguments"] == args
+
+
+def test_downstream_argument_allowlist_strips_spoofed_fields():
+    args = {
+        "order_id": "ord-1003",
+        "amount_eur": 45,
+        "reason": "duplicate charge",
+        "role": "finance",
+        "human_approved": True,
+        "is_admin": True,
+    }
+    schema = {
+        "type": "object",
+        "properties": {
+            "order_id": {"type": "string"},
+            "amount_eur": {"type": "number"},
+            "reason": {"type": "string"},
+        },
+    }
+    assert allowlist_downstream_arguments(args, schema) == {
+        "order_id": "ord-1003",
+        "amount_eur": 45,
+        "reason": "duplicate charge",
+    }
 
 
 def test_policy_input_shape():

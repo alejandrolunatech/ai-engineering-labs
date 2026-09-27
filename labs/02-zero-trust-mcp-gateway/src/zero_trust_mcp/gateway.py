@@ -75,6 +75,19 @@ def build_policy_input(context: TrustedContext, tool_name: str, arguments: dict[
     }
 
 
+def allowlist_downstream_arguments(arguments: dict[str, Any], input_schema: dict[str, Any]) -> dict[str, Any]:
+    """Forward only arguments declared by the downstream MCP tool schema.
+
+    The policy still receives the original untrusted arguments so spoofing
+    attempts remain observable and cannot influence trusted context. After an
+    allow decision, this function narrows what crosses the gateway boundary.
+    """
+    properties = input_schema.get("properties") if isinstance(input_schema, dict) else None
+    if not isinstance(properties, dict):
+        raise ValueError("downstream tool has no usable object input schema")
+    return {key: value for key, value in arguments.items() if key in properties}
+
+
 def denial_result(decision_id: str, decision: PolicyDecision) -> types.CallToolResult:
     # Only the policy's own reason and rule_id are returned; argument values are not echoed.
     return types.CallToolResult(
@@ -100,6 +113,14 @@ class Gateway:
         # Discovery is not authorization: listing a tool grants nothing.
         return await self.downstream.list_tools()
 
+    async def _downstream_arguments(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Resolve the downstream schema and strip undeclared model-supplied fields."""
+        listed = await self.downstream.list_tools()
+        downstream_tool = next((tool for tool in listed.tools if tool.name == tool_name), None)
+        if downstream_tool is None:
+            raise ValueError("authorized tool is not exposed by downstream server")
+        return allowlist_downstream_arguments(arguments, downstream_tool.input_schema)
+
     async def call_tool(self, tool_name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
         decision_id = str(uuid.uuid4())
         started = time.perf_counter()
@@ -124,7 +145,12 @@ class Gateway:
 
         self.audit.record("allowed", decision_id, **who, **verdict)
         try:
-            result = await self.downstream.call_tool(tool_name, args)
+            # The policy evaluates the original request, including any spoofed
+            # fields. Only schema-declared arguments cross the gateway after
+            # authorization, preventing today's ignored extras from becoming
+            # tomorrow's accidental authority-bearing parameters.
+            downstream_args = await self._downstream_arguments(tool_name, args)
+            result = await self.downstream.call_tool(tool_name, downstream_args)
         except Exception as exc:
             self.audit.record("downstream_failed", decision_id, **who, error_type=type(exc).__name__)
             return types.CallToolResult(
