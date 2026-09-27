@@ -424,7 +424,12 @@ Generate a CI workflow using the same verifier.
 
 ## Phase 8 — Template versioning and upgrades
 
-Introduce a second template version.
+The second template version already exists. Phase 3 added executable runtime
+code by creating `capability@0.2.0` instead of editing the released
+`capability@0.1.0`, which stays frozen and SHA-256-pinned by tests. Phase 8
+should therefore exercise the **real 0.1.0 → 0.2.0 upgrade path**, a
+substantial tree change that adds runtime code, tests and a contract snapshot,
+rather than inventing a synthetic second version.
 
 Prove that:
 

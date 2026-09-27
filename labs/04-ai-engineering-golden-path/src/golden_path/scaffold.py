@@ -29,8 +29,14 @@ TEMPLATES_ROOT = LAB_ROOT / "templates"
 CAPABILITY_SCHEMA_PATH = LAB_ROOT / "schemas" / "capability.schema.json"
 
 TEMPLATE_ID = "capability"
-TEMPLATE_VERSION = "0.1.0"
+# The current template. Released template versions are immutable: a change to
+# generated output means a new version directory, never an edit to an old one.
+TEMPLATE_VERSION = "0.2.0"
 RENDER_SUFFIX = ".j2"
+
+# Platform-managed files copied byte-for-byte from canonical platform sources
+# rather than from the template, so a template cannot drift from the contract.
+PLATFORM_FILES = {"platform/capability.schema.json": CAPABILITY_SCHEMA_PATH}
 
 
 class ScaffoldError(Exception):
@@ -85,11 +91,15 @@ def template_dir() -> Path:
 
 def template_sources() -> list[Path]:
     root = template_dir()
-    # Dotfiles are skipped so OS metadata (e.g. .DS_Store) never leaks into output.
+    # Dotfiles and bytecode caches are skipped so OS metadata (e.g. .DS_Store) or
+    # __pycache__ from running template code never leaks into output.
     return sorted(
         path
         for path in root.rglob("*")
-        if path.is_file() and not any(part.startswith(".") for part in path.relative_to(root).parts)
+        if path.is_file()
+        and not any(
+            part.startswith(".") or part == "__pycache__" for part in path.relative_to(root).parts
+        )
     )
 
 
@@ -119,8 +129,13 @@ def render(name: str) -> dict[str, bytes]:
         else:
             files[relative] = source.read_bytes()
 
+    for output, canonical in PLATFORM_FILES.items():
+        if output in files:
+            raise TemplateContractError(f"template must not provide platform-managed file {output}")
+        files[output] = canonical.read_bytes()
+
     check_rendered_manifest(name, files)
-    return files
+    return dict(sorted(files.items()))
 
 
 def check_rendered_manifest(name: str, files: dict[str, bytes]) -> None:

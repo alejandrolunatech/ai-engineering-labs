@@ -1,0 +1,5 @@
+# Test configuration only. Template 0.2.0 does not package or install this
+# project; run it from the project root with `python src/capability.py`.
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

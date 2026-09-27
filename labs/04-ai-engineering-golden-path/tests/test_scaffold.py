@@ -37,12 +37,32 @@ from test_capability_schema import (
 )
 
 LAB_ROOT = Path(__file__).resolve().parents[1]
+# Tree produced by the CURRENT template version (capability@0.2.0).
 EXPECTED_TREE = [
     "README.md",
     "capability.yaml",
+    "fixtures/sample_input.json",
+    "platform/capability.schema.json",
+    "pyproject.toml",
+    "requirements.txt",
     "schemas/input.schema.json",
     "schemas/output.schema.json",
+    "src/capability.py",
+    "src/contracts.py",
+    "src/model_adapter.py",
+    "tests/test_capability.py",
 ]
+
+# Released templates are immutable. These digests pin capability@0.1.0 exactly
+# as committed in Phase 2; any edit must become a new template version instead.
+FROZEN_TEMPLATES = {
+    "0.1.0": {
+        "README.md.j2": "477a1d56242896f3a9c92263cf035c8a762bfc42c3236d2e9cf640e1f0a066b0",
+        "capability.yaml.j2": "074444f57bfca53569e9643a988996947414fa6d4f4289c49ca634647631a97c",
+        "schemas/input.schema.json": "30a49ee496efc3a7f55cf50bc74de7d16b9852d8c80c58b03d02b5f98e2b716d",
+        "schemas/output.schema.json": "64b84ca89036e3c2af93c3184cfac927e468caedd314ae7463e9b5dcc785f029",
+    },
+}
 
 runner = CliRunner()
 
@@ -140,13 +160,31 @@ def test_invalid_name_creates_nothing(tmp_path, monkeypatch, name):
 
 def test_template_directory_matches_declared_version():
     root = scaffold.template_dir()
-    assert root.name == scaffold.TEMPLATE_VERSION == "0.1.0"
+    assert root.name == scaffold.TEMPLATE_VERSION == "0.2.0"
     assert [p.relative_to(root).as_posix() for p in scaffold.template_sources()] == [
         "README.md.j2",
         "capability.yaml.j2",
+        "fixtures/sample_input.json",
+        "pyproject.toml",
+        "requirements.txt",
         "schemas/input.schema.json",
         "schemas/output.schema.json",
+        "src/capability.py",
+        "src/contracts.py",
+        "src/model_adapter.py",
+        "tests/test_capability.py",
     ]
+
+
+@pytest.mark.parametrize("version", sorted(FROZEN_TEMPLATES))
+def test_released_template_is_frozen(version):
+    root = scaffold.TEMPLATES_ROOT / scaffold.TEMPLATE_ID / version
+    committed = {
+        path: digest
+        for path, digest in tree_digest(root).items()
+        if not any(part.startswith(".") or part == "__pycache__" for part in path.split("/"))
+    }
+    assert committed == FROZEN_TEMPLATES[version]
 
 
 def test_new_creates_exact_tree(tmp_path, monkeypatch):
@@ -156,7 +194,6 @@ def test_new_creates_exact_tree(tmp_path, monkeypatch):
     assert sorted(tree_digest(project)) == EXPECTED_TREE
     assert [p.name for p in tmp_path.iterdir()] == ["demo-capability"]
     assert not (project / "evals").exists()  # eval kit is Phase 4
-    assert not (project / "tests").exists()
 
 
 @pytest.mark.parametrize("name", ["demo-capability", "change-explainer", "abc", "a" * 40, "yes", "null", "off", "true"])

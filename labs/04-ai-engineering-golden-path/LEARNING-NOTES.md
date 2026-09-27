@@ -310,17 +310,205 @@ Places where magic could creep in, kept visible for now:
 
 ## Reference capability
 
+Evidence:
+- **Template:** `templates/capability/0.2.0/`. Its generated runtime is
+  `src/{contracts,model_adapter,capability}.py` plus
+  `tests/test_capability.py`.
+- **Platform tests:** `tests/test_template_runtime.py` (15 tests) and the
+  updated `tests/test_scaffold.py` (68 tests). The full Lab 04 suite is 221
+  tests, all passing.
+- **Manual run outside the repo:** `ai-golden-path new runtime-demo`, then
+  `python src/capability.py fixtures/sample_input.json` and the generated
+  `pytest`, which passed 32 tests.
+
+### Why 0.1.0 was frozen instead of silently changed
+
+`capability@0.1.0` was already released: committed, and recorded as
+`template_version: "0.1.0"` in generated projects. Phase 3 grows the
+generated tree from 4 files to 12, and adds runtime code, tests and a
+contract snapshot.
+
+Editing 0.1.0 in place would have made two different trees claim the same
+provenance. "0.1.0" would stop meaning one thing, and no upgrade path out of
+it could ever be computed. Instead:
+- Phase 3 created `capability@0.2.0`.
+- The CLI generates only the current version.
+- `test_released_template_is_frozen` pins the SHA-256 of every 0.1.0 file as
+  committed in Phase 2.
+- The Phase 2 tests that describe "the current template" were updated to
+  0.2.0 (tree, source list, version).
+
+As a result, Phase 8 will exercise the **real 0.1.0 → 0.2.0 upgrade** rather
+than inventing a synthetic second version. README.md and PROMPTS.md were
+updated to say so.
+
 ### Model adapter boundary
 
-_Write here._
+- **The protocol is async:** `ModelAdapter.name` plus
+  `async def generate(ModelRequest) -> ModelResponse`, matching
+  ARCHITECTURE.md. Real adapters are I/O-bound, and choosing async now avoids
+  breaking the protocol later. The runtime is async inside; the command line
+  uses `asyncio.run`.
+- **Request and response types** are provider-neutral frozen dataclasses:
+  - `ModelRequest`: capability, profile, instructions, validated input,
+    output schema, `max_output_tokens`.
+  - `ModelResponse`: `content: str` plus `ModelInfo(adapter, model)`.
+- **Content is always text.** The runtime parses it itself, so an adapter
+  cannot pass through Python objects or SDK types. A response that isn't a
+  `ModelResponse`, or whose content isn't a `str`, counts as invalid output.
+- **Adapters come from an explicit registry,** `ADAPTERS = {"fake":
+  FakeModelAdapter}`. Nothing named in the manifest is imported. An unknown
+  slug fails closed (exit 3). An injected adapter whose `name` differs from
+  the declared adapter is refused. Template 0.2.0 sets `adapter: fake`
+  because `default` would name an adapter that doesn't exist. This is where
+  the Phase 1 gap "the schema can't tell whether an adapter exists" is
+  handled: at runtime, not in the schema.
+- **The result keeps three things separate:**
+  - declared values from `capability.yaml`: `capability.*`,
+    `model.declared_adapter`, `model.declared_profile`;
+  - adapter-reported, **untrusted** labels: `model.adapter_reported`;
+  - the enforced budget: `model_requests.used` / `limit`.
+- **The generated project is independent of the platform:**
+  - A static AST test allows only stdlib, `jsonschema`, `yaml`, `pytest` and
+    the project's own modules.
+  - Generated `src/` must not import `os`, network modules or provider SDKs,
+    and must not read `environ` or `getenv`.
+  - The generated suite and command line were run in a subprocess with a stub
+    `golden_path` package that raises on import. They passed, proving
+    independence even though the platform is installed in the same venv.
+- **Contract snapshot:** `platform/capability.schema.json` is copied
+  byte-for-byte from the canonical schema at scaffold time. It comes from the
+  canonical file, not from a copy under `templates/`, and a test asserts the
+  bytes are identical. A template that tries to provide that file itself
+  fails generation. Teams *can* edit the snapshot today and nothing detects
+  it. Phase 7 verification is meant to detect contract and provenance drift.
+  A released `ai.platform/v1` schema remains immutable.
+
+### Which manifest declarations became runtime enforcement in Phase 3?
+
+| Declaration | Phase 3 status |
+|---|---|
+| Whole manifest vs contract snapshot | **Enforced**: invalid manifest → exit 3 before any adapter call (zero budget and an injected `api_key` both tested) |
+| `spec.inputs.schema` | **Enforced before the model**: invalid input → exit 2, `adapter.calls == []`, `model_requests_used == 0` |
+| `spec.outputs.schema` | **Enforced after the model**: strict JSON parse + schema; invalid output is never returned |
+| `spec.budgets.max_model_requests` | **Enforced**: `RequestBudget.consume()` runs immediately before every adapter call |
+| `spec.model.adapter` | **Enforced**: explicit registry, unknown slug fails closed |
+| `spec.authority.tools` | **Fail closed**: a non-empty list refuses to run before any model call (no tool runtime exists) |
+
+### Which remain declarations only?
+
+- `max_output_tokens` is passed to the adapter as declared intent. No token
+  usage is measured or enforced.
+- `max_latency_ms` has no timeout.
+- `observability.*` produces no telemetry.
+- `evaluation.*` has no eval suite or runner.
+- `data.sensitivity` is a label only.
+- `model.profile` is passed through; nothing maps it to a real model.
+
+### Budget and retry policy (as built)
+
+- One unit of budget is consumed immediately **before** each adapter call.
+  Every attempt counts, including attempts that raise.
+- Schema-invalid output is retried while budget remains. With a limit of 2,
+  "invalid, invalid, valid" is scripted, but the third response is **never
+  requested**. The run fails with `OutputValidationError` and
+  `model_requests_used == 2`.
+- Adapter exceptions are **not** retried: `ModelInvocationError`, 1 call.
+- A budget of 1 means no retry.
+- `RequestBudget.consume()` also raises on its own past the limit, as defense
+  in depth.
+
+This retry behavior is **the Phase 3 runtime policy of this template**, not a
+universal recommendation for every AI capability.
 
 ### What can run without a real model?
 
-_Write here._
+Everything in Phase 3. `FakeModelAdapter` is deterministic and offline, needs
+no keys and does no I/O:
+- `headline` = `"{change_id}: {title}"`;
+- `explanation` = file count plus summary;
+- `risk_level` comes from a documented **toy** rule on file paths, not a risk
+  assessment;
+- `open_questions` is empty unless no files are listed.
+
+Scripted mode returns listed responses or exceptions in order and records
+every call. That makes invalid output, retries, adapter failures and budget
+exhaustion reproducible.
+
+**Why the fake adapter is useful:** it tests the *boundaries*, not the
+model. The boundaries are input-before-model, output-after-model, budget
+counting, fail-closed configuration and error hygiene. Running without keys,
+network, cost or randomness makes them reproducible in CI. The output was
+byte-identical across two command-line runs. The fake says nothing about
+explanation quality, and that was never its job.
+
+**Mutation evidence:** each boundary was broken in a generated copy, and the
+generated suite caught every one:
+
+| Mutation | Result |
+|---|---|
+| none (baseline) | 32 passed |
+| input validated after the model call | 9 failed |
+| budget loop allows one extra call | 13 failed |
+| unvalidated output accepted | 14 failed |
+| adapter exceptions retried | 1 failed |
+| declared tools ignored | 1 failed |
+
+The last two are each caught by a single test, so that coverage is thin.
 
 ### Input/output validation failures observed
 
-_Write here._
+Manual invalid input: `{"change_id": "1042", …, "files_changed":
+"src/payments.py"}` gave exit 2, empty stdout, and this on stderr:
+
+```
+{"error": "InputValidationError", "message": "input violates schemas/input.schema.json: change_id failed 'pattern'; files_changed failed 'type'", "model_requests_used": 0}
+```
+
+The error names the field and rule but not the values `1042` or
+`src/payments.py`. Both the generated and platform tests use a marker value
+to prove the input and output are not echoed.
+
+**Invalid inputs tested**, none of which invokes the adapter:
+- a missing field;
+- an extra field;
+- a bad `change_id` pattern;
+- `files_changed` that isn't a list;
+- an empty title;
+- a list, a string or `null` instead of an object;
+- malformed JSON on the command line.
+
+**Invalid outputs tested**, all rejected:
+- non-JSON text;
+- a JSON array;
+- a missing `risk_level`;
+- an extra key;
+- an unknown enum value;
+- a headline of 121 characters;
+- a duplicate JSON key;
+- a `NaN` constant;
+- non-text `content`;
+- a response that isn't a `ModelResponse`.
+
+Duplicate keys and `NaN` are rejected by a strict JSON parser. This is the
+Phase 1 duplicate-key lesson applied to model output and input files, not
+only to YAML.
+
+### Why schema-valid does not mean runtime-correct
+
+- A manifest can be schema-valid and still unrunnable: an unknown adapter,
+  or declared tools with no tool runtime. Both pass the Phase 1 schema, and
+  both fail closed only because the runtime checks them.
+- A schema-valid manifest *declares* `max_output_tokens: 800` and
+  `max_latency_ms: 5000`. Neither is enforced.
+- Model output can be schema-valid and still wrong. The fake's
+  `risk_level: "low"` for a refactor is valid by construction, and a real
+  model could return a valid but misleading explanation. Output validation
+  proves shape, not truth. Judging behavior is the job of evaluation
+  (Phase 4).
+- Passing tests show the runtime enforced these boundaries with a
+  deterministic fake. They do not show that any real model or this
+  capability is safe or production-ready.
 
 ---
 

@@ -29,7 +29,7 @@ def new(
         ..., help="Capability name: 3-40 chars, lowercase letters/digits, single hyphens."
     ),
 ) -> None:
-    """Create ./<name>/ from template capability@0.1.0. Refuses to overwrite."""
+    """Create ./<name>/ from the current capability template. Refuses to overwrite."""
     try:
         destination, files = scaffold.new_capability(name, Path.cwd())
     except scaffold.InvalidNameError as exc:

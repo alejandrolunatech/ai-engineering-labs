@@ -226,8 +226,10 @@ Do not commit.
 ```text
 Implement Phase 8 only.
 
-Create a second template version with one meaningful compatible or breaking
-change.
+A second template version already exists: capability@0.2.0 (Phase 3) added
+runtime code while capability@0.1.0 stayed frozen. Use the real
+0.1.0 -> 0.2.0 upgrade as the primary case. Classify it as compatible or
+breaking, and only add a further version if the lab needs another change type.
 
 Build an inspectable upgrade workflow.
 
