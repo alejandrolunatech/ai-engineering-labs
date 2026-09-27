@@ -21,3 +21,18 @@ This repository is a hands-on learning environment for AI engineering.
 Canonical instructions: `labs/01-pr-guardian/README.md`
 
 Copyable implementation prompts: `labs/01-pr-guardian/PROMPTS.md`
+
+## Lab 02
+
+Canonical instructions: `labs/02-zero-trust-mcp-gateway/README.md`
+
+Copyable implementation prompts: `labs/02-zero-trust-mcp-gateway/PROMPTS.md`
+
+Additional Lab 02 rules:
+
+- Treat every MCP tool request as untrusted until policy permits it.
+- Never let model-supplied arguments define trusted identity, role, approval, or environment.
+- Default deny and fail closed when policy evaluation is unavailable or malformed.
+- Keep policy decision-making separate from policy enforcement.
+- Record attempted, denied, and executed actions separately.
+- Do not expose the downstream MCP server directly to the agent in the final architecture.

@@ -9,7 +9,7 @@ These labs are designed around the difference between **AI experimentation** and
 | Lab | Focus | Status |
 |---|---|---|
 | [01 — PR Guardian](labs/01-pr-guardian/README.md) | Bounded PR-review agent, evals, tracing, token/cost measurement, regression testing | **Ready** |
-| 02 — Zero-Trust MCP Gateway | MCP security, policy-as-code, prompt injection, least privilege | Planned |
+| [02 — Zero-Trust MCP Gateway](labs/02-zero-trust-mcp-gateway/README.md) | MCP security, OPA/Rego policy-as-code, prompt injection, least privilege | **Ready** |
 | 03 — Incident Commander | OpenTelemetry, traces, AI-assisted incident diagnosis | Planned |
 | 04 — AI Engineering Golden Path | Reusable AI platform primitives and developer self-service | Planned |
 
@@ -41,7 +41,7 @@ ai-engineering-labs/
 ├── AGENTS.md
 ├── .gitignore
 └── labs/
-    └── 01-pr-guardian/
+    ├── 01-pr-guardian/
         ├── README.md
         ├── PROMPTS.md
         ├── LEARNING-NOTES.md
@@ -52,6 +52,17 @@ ai-engineering-labs/
         ├── evals/
         ├── reports/
         └── tests/
+    └── 02-zero-trust-mcp-gateway/
+        ├── README.md
+        ├── PROMPTS.md
+        ├── LEARNING-NOTES.md
+        ├── THREAT-MODEL.md
+        ├── requirements.txt
+        ├── src/
+        ├── policies/
+        ├── fixtures/
+        ├── tests/
+        └── reports/
 ```
 
 ## Evidence discipline

@@ -20,3 +20,5 @@ When reviewing or modifying code:
 7. Prefer concrete evidence over generic praise.
 
 For Lab 01, read `labs/01-pr-guardian/README.md` before proposing changes.
+
+For Lab 02, read `labs/02-zero-trust-mcp-gateway/README.md` before proposing changes. In security reviews, distinguish **model influence**, **policy decision**, **gateway enforcement**, and **downstream execution**.
