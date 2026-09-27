@@ -325,7 +325,7 @@ async def test_failure_before_invocation_is_recorded_as_not_invoked():
         spy.append(SchemaUnavailable(client))
         return spy[0]
 
-    refund = ("issue_refund", {"order_id": "ord-1003", "amount_cents": 250000, "reason": "dup"})
+    refund = ("issue_refund", {"order_id": "ord-1003", "amount_cents": 2500, "reason": "dup"})
     _, store, audit = await run_calls(SUPPORT, AllowAll(), [refund], downstream_wrapper=wrap)
     failed = audit.events[-1]
     assert failed["event"] == "downstream_failed"
