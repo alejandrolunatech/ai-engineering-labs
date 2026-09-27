@@ -160,21 +160,151 @@ string.
 
 ## Scaffold CLI
 
+Evidence:
+- **Platform code:** `src/golden_path/{cli.py,scaffold.py}`, the template
+  `templates/capability/0.1.0/`, and `pyproject.toml`, which provides the
+  `ai-golden-path = "golden_path.cli:app"` command.
+- **Tests:** `tests/test_scaffold.py` has 67 tests. The full Lab 04 suite is
+  205 tests, and all pass.
+- **Manual run:** `pip install -e .` succeeded, followed by
+  `ai-golden-path new demo-capability`.
+
 ### Generated tree
 
-_Write here._
+```
+demo-capability/
+├── capability.yaml
+├── README.md
+└── schemas/
+    ├── input.schema.json
+    └── output.schema.json
+```
+
+That's four files, with no dotfile, lockfile or hidden state. Only
+`README.md.j2` and `capability.yaml.j2` are rendered. The two I/O schemas are
+copied byte-for-byte. The only user input is the name. The display title is
+derived from it (`demo-capability` → `Demo Capability`). `template_version`
+comes from a platform constant, never from user input.
+
+Provenance is recorded in `metadata.template_version` in `capability.yaml`.
+The header comment and one README line mention it too, but only as notes for
+readers. There is no `template_id` field in the v1 schema, which is fine
+while there is a single template. A second template family would need a
+schema change.
+
+The template produces the Change Explainer reference capability on purpose.
+It is not yet a catalog of capability types.
 
 ### Time to scaffold
 
-_Write here._
+Measured on a MacBook with an editable install:
+- `ai-golden-path new <name>` took 0.23–0.26 s wall time over 5 runs, mostly
+  Python and Typer start-up.
+- In-memory rendering plus contract validation averaged 5.8 ms over 50 runs.
+
+Generation needs no network. A test disables `socket` and generation still
+succeeds. `pip install -e .` did fetch the setuptools build backend once into
+pip's temporary build environment. setuptools is not a runtime dependency and
+is not installed in the venv.
 
 ### What does the product team own after generation?
 
-_Write here._
+All four generated files. Nothing in them imports or depends on
+`golden_path`, so the project stays intact if the platform tooling
+disappears.
+
+Exception: in `capability.yaml`, the keys `api_version`, `kind` and
+`metadata.template_version` are marked as platform-managed, to be changed
+only by a future upgrade tool. That is only a comment today. Nothing stops a
+team from editing them. Detecting that is a verifier/upgrade concern
+(Phases 7–8).
+
+The starter defaults are flagged in the manifest comments and in a README
+"Review before use" checklist, and a test locks that wording in:
+- `spec.purpose` describes the reference template, not the new capability.
+- `spec.data.sensitivity: synthetic` exists only because the reference
+  template uses synthetic data. The README states that this is **not** a safe
+  default for real capabilities, and that data must be classified before any
+  real data is used.
+
+### What does the scaffold prove, and what not?
+
+Proven by tests:
+- **Contract conformance:**
+  - The generated `capability.yaml` validates against the canonical Phase 1
+    schema, loaded with the strict duplicate-key loader.
+  - It has exactly the same set of key paths as the Phase 1 example.
+  - The CLI checks the rendered manifest against the schema before writing
+    anything. A deliberately broken template (`max_model_requests: 0`) makes
+    the command exit 3 and create nothing.
+- **Determinism:**
+  - Two generations are byte-for-byte identical.
+  - Generations in two separate processes with `PYTHONHASHSEED=0` and `=1`
+    produce identical SHA-256 trees.
+  - Generated content contains no temp path, home folder, lab path,
+    username, hostname, date-like string, UUID-like string or `\r`.
+- **Overwrite refusal:**
+  - An existing empty folder, a folder with edits, a file, a symlink to a
+    folder and a broken symlink all cause exit 1, with a before/after
+    snapshot that is identical.
+  - Running the command a second time on `demo-capability` (after appending a
+    team note to its README) exited 1. SHA-256 hashes, the file tree and
+    modification times were unchanged.
+  - There is no `--force` option; passing it is a usage error.
+- **Transactional writes:** if a write fails after the folder was created,
+  only that new folder is removed and sibling folders survive. A missing
+  parent folder is not created.
+- **Name validation:**
+  - The rule is read from the schema, not copied.
+  - A parity test shows the CLI and the schema agree on every Phase 1 valid
+    and invalid name.
+  - Invalid names create nothing and exit 2. Tests pass names after `--`.
+    Without it, `-change` was rejected by Click's option parser before the
+    validator ran: the right exit code for the wrong reason. The test now
+    also checks the validator's message.
+- **YAML coercion:** names like `yes`, `null`, `off` and `true` match the
+  name pattern, but YAML 1.1 would turn them into a bool or null. The
+  template quotes `metadata.name`, and tests confirm these names produce
+  string values.
+
+Not proven, or not done:
+- That the starter purpose, sensitivity or schemas suit any real capability.
+- That any runtime, eval, telemetry or policy behavior exists. None does yet.
+- That files have deterministic permissions. Content is deterministic, but
+  modes follow the local umask.
+- That templates can be found from a built wheel. `scaffold.py` finds
+  `templates/` and `schemas/` relative to the source checkout. This works for
+  `pip install -e .` and `python -m golden_path`, not for a non-editable
+  wheel. Shipping them as package data is deferred.
+
+### Schema regex edge case found while building the CLI
+
+Python's `re.search`, which `jsonschema` uses for `pattern`, lets `$` match
+*before a trailing newline*. As a result, the committed `ai.platform/v1`
+schema accepts `metadata.name: "change-explainer\n"`. A test confirms this.
+The same edge case likely affects the schema's other `$`-anchored patterns
+(semver, slugs, paths). That has not been fixed or tested field by field.
+
+Because a capability name becomes a directory name, the CLI adds a
+**filesystem-safety check on top of schema validation**: `re.fullmatch` on
+the same pattern, plus explicit CR/LF rejection. On this one input the CLI is
+deliberately stricter than the schema, and a test documents that. Running
+`ai-golden-path new -- $'demo-capability\n'` exited 2 with "contains line
+breaks". The released v1 schema was **not** modified. A portable fix would be
+a deliberate contract change.
 
 ### Where did generation feel like useful automation versus framework magic?
 
-_Write here._
+Useful automation:
+- One command produces a contract-valid project in well under a second.
+- Name validation, provenance and overwrite safety come for free.
+- The template is four plain files whose output can be read directly.
+
+Places where magic could creep in, kept visible for now:
+- The only template rule is "`.j2` is rendered, everything else is copied,
+  dotfiles are skipped".
+- The template location depends on the source checkout.
+- The "platform-managed keys" boundary exists only as a comment.
 
 ---
 
