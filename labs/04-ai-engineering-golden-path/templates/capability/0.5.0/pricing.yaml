@@ -1,0 +1,23 @@
+# Explicit model prices, used ONLY to estimate cost in telemetry.
+# Format: platform/pricing.schema.json (ai.platform/v1, kind Pricing).
+#
+# - Estimates are not billing: no taxes, discounts, cached-token rates or
+#   provider rounding.
+# - A price applies only on an exact match of adapter name AND the
+#   adapter-reported model label, so an estimate is only as trustworthy as
+#   that adapter-reported label.
+# - With no matching price, cost is reported as UNKNOWN, never as zero.
+# - `currency` is checked only for ISO-4217 shape (three uppercase letters),
+#   not against a currency registry.
+#
+# Prices are quoted decimal strings, in currency units per 1,000,000 tokens.
+# Example entry (synthetic; not a real price):
+#
+#   - adapter: fake
+#     model: fake-deterministic-v2
+#     input_per_million_tokens: "0.50"
+#     output_per_million_tokens: "1.50"
+api_version: ai.platform/v1
+kind: Pricing
+currency: USD
+prices: []

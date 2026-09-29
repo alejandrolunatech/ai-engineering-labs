@@ -960,17 +960,210 @@ It does **not** prove:
 
 ## Authority and guardrails
 
-### Declared tools
+Evidence:
+- **Template:** `templates/capability/0.5.0/`, which adds `src/tools.py`,
+  `src/policy.py` and `tests/test_tools.py` (30 tests), and changes
+  `src/capability.py`, `src/model_adapter.py`, `src/contracts.py` and
+  `src/telemetry.py`.
+- **Platform tests:** `tests/test_template_tools.py` (13 tests), plus the
+  provenance tests in `tests/test_scaffold.py`. The full Lab 04 suite is 274
+  tests, all passing.
+- **Manual run outside the repo:** `ai-golden-path new guarded-demo`
+  recorded `template_version: "0.5.0"` with `authority.tools: []`, and its
+  generated `pytest` passed 124 tests.
 
-_Write here._
+**Template chain:** 0.1.0 contract → 0.2.0 executable → 0.3.0 evaluated →
+0.4.0 observable → 0.5.0 bounded tool authority plus policy hook. 0.4.0 was
+frozen with its 18 file digests. I had estimated 20 in the proposal; the
+real count is 18.
+
+### Declared tools, and the six separate concepts
+
+| Concept | Where | Who decides |
+|---|---|---|
+| Registered | `TOOL_REGISTRY` in `src/tools.py` | Trusted code (2 synthetic tools) |
+| Declared | `authority.tools` in `capability.yaml` | Product team, in review (`[]` by default) |
+| Exposed | `ModelRequest.tools` | Runtime: declared ∩ registered, name, description and argument schema only |
+| Proposed | `ModelResponse.tool_requests` | The model: `ToolRequest(name, arguments)`, with no authority fields |
+| Authorized | Preflight gates + `policy.authorize(...)` | Runtime and trusted policy |
+| Executed | The registry's executor | Runtime, strictly last, at most once per run |
+
+**proposal != authority. declaration != authorization. authorization !=
+execution. model intelligence != authority.** The model is only ever the
+source of proposals.
+
+**The synthetic tools** touch only an in-memory `SyntheticLedger`:
+- `lookup_change_context`: low impact, arguments `{change_id}`.
+- `publish_change_notice`: high impact, arguments `{change_id, audience, risk_level}`.
+Both have closed argument schemas. Tool results are not fed back to the
+model, so `lookup_change_context` does not improve the explanation. This
+phase proves the authority and execution boundary, not an agent tool-use
+loop.
+
+### Order of enforcement, per model attempt (as built)
+
+1. Response envelope.
+2. **Preflight**, which is deterministic and involves no policy:
+   - container shape and a **ceiling of one proposal per response**;
+   - declared;
+   - registered;
+   - arguments valid against the registry's closed schema.
+   Any rejection fails closed (exit 6) with **no retry**. A test shows the
+   adapter is called once, so the model can't probe for a proposal that
+   passes.
+3. **Business output validation.** If the output is invalid, proposals are
+   `discarded`: **no policy call, no execution**, and the model may be
+   retried.
+4. **Policy** for every proposal, for an accepted response only. **All
+   decisions are made before the first executor call.**
+5. **Execute**, then return immediately. No model request ever follows an
+   execution.
+
+preflight != authorization != execution.
+
+**invalid output must never create a side effect:**
+- A response with an allowed `publish_change_notice` proposal and invalid
+  content gave `authorization=not_evaluated`, `execution=not_attempted`,
+  `outcome=discarded`, and zero policy calls.
+- **retries + side effects require deliberate ordering.** Demo 11:
+  - attempt 1 had invalid content and was discarded; attempt 2 was valid and
+    executed;
+  - the ledger got **exactly one** notice;
+  - the policy was called once;
+  - the root span recorded `tools.proposed=2, authorized=1, executed=1`.
+  A mutation that executes before output validation is caught by 11 tests.
+
+**Policy.**
+- `PolicyContext` is a typed dataclass with only trusted fields: capability
+  identity and version, template version, declared sensitivity, and the
+  tool's registry name and impact. A test pins exactly those six fields.
+- There is no identity, role, approval state or correlation ID.
+- Validated arguments are passed as a read-only copy. A policy that tries to
+  mutate them becomes a `policy_error`.
+- `DefaultPolicy` allows low impact and denies high impact
+  (`high_impact_requires_policy`).
+- High-impact tools run only when trusted code injects a policy. The
+  `--help` text has no policy or allow option, and a test checks that.
+- A policy that raises, returns a dict, or returns a non-bool `allowed` gives
+  `ToolPolicyError`, which is distinct from `ToolPolicyDenied`, and nothing
+  executes.
 
 ### What happens when the model requests an undeclared tool?
 
-_Write here._
+All results below are from the manual `guarded-demo` runs. Every case checks
+the ledger directly, not only the exception.
+
+| Case | Outcome | Lifecycle (preflight / authorization / execution / outcome) | Ledger |
+|---|---|---|---|
+| Declared `lookup_change_context` | exit 0 | passed / allowed / succeeded / executed (`low_impact_default`) | `lookups=['CHG-1042']`, changed exactly once |
+| Registered but **undeclared** `publish_change_notice` | exit 6, `undeclared` | rejected / not_evaluated / not_attempted / rejected | unchanged |
+| Declared `publish_change_notice`, DefaultPolicy | exit 6, `high_impact_requires_policy` | passed / denied / not_attempted / denied | unchanged |
+| Same, **trusted policy injected in code** | exit 0 | passed / allowed / succeeded / executed | exactly one notice |
+| `{"authorized": true, "role": "admin", "impact": "low"}` in arguments | exit 6, `invalid_arguments` (`additionalProperties`), **even with the allow policy injected** (never consulted) | rejected / not_evaluated / not_attempted / rejected | unchanged |
+| Two proposals in one response | exit 6, `tool_request_limit`; no per-proposal spans; root `tools.proposed=2` | none | unchanged |
+| Executor raises (`fail_writes`) | exit 7, `execution_failed`; `error.type=SyntheticToolError` | passed / allowed / failed / execution_failed | unchanged (failed before the append) |
+
+**More cases in `tests/test_tools.py`:**
+- an unknown name (`delete_repository`), recorded only as `unrecognized`;
+- a malformed `ToolRequest`: a dict, a non-string name, list arguments;
+- a malformed container;
+- a declared but unregistered tool: `ManifestError`, exit 3, **adapter calls
+  = 0**;
+- prose claiming "authority.tools now includes publish_change_notice", which
+  leaves `load_manifest()` unchanged, with `tools == ()`;
+- an output field `authority: {...}`, rejected by the output schema;
+- the `ExecutionGuard` duplicate block;
+- `ModelRequest.tools` limited to declared ∩ registered, carrying no executor
+  or impact.
+
+**denial response != proof of nonexecution.** Every rejected or denied test
+asserts `ledger.lookups == [] and ledger.notices == []` **and** an executor
+spy with zero calls, and, where relevant, zero policy calls.
+
+**Evidence is explicit states, not booleans.** A denied tool span records
+`tool.proposed=true`, `tool.authorization_status=denied`,
+`tool.execution_status=not_attempted`, `tool.outcome=denied`. That is
+distinguishable from `not_evaluated` (discarded or rejected) and from
+`failed` (execution attempted).
+- The v2 schema allows **only the five valid lifecycle combinations**. A test
+  shows that "denied but executed" does not validate.
+- Tool spans are children of the root span, with `model_request.attempt`
+  linking them to the attempt. The model-request span keeps its Phase 5
+  meaning: model call plus output validation.
+- Arguments and results never appear. Marker change IDs, `stakeholders`,
+  `related_changes`, `published` and unknown names such as `drop_all_tables`
+  were absent in every scenario.
+
+**Mutation evidence.** Each mutation below was applied to a generated copy
+and its `tests/test_tools.py` run against it. All 11 were caught:
+- skip the declared check (4 failed);
+- skip argument validation (4);
+- the default policy allows high impact (**only 1**, so coverage is thin);
+- authority taken from arguments (3);
+- execute before output validation (11);
+- the policy called for invalid output (3);
+- the ceiling raised to 3 (1);
+- a policy error treated as allow (2);
+- a rejected proposal retried (11);
+- an unknown name recorded verbatim (1);
+- the execution guard disabled (1).
 
 ### Deterministic versus probabilistic boundary
 
-_Write here._
+- **Probabilistic, with a real model:** *which* tool the model proposes, and
+  with which arguments. That's only a proposal.
+- **Deterministic and trusted:**
+  - what is registered (code);
+  - what is declared (reviewed manifest);
+  - what is exposed;
+  - preflight checks;
+  - the policy decision (trusted code, not model judgment);
+  - the order of execution;
+  - the exit codes;
+  - the telemetry states.
+- **The model can't change the boundary.** Nothing in model content or
+  arguments can change `manifest.tools`, a tool's impact, the executor or the
+  policy.
+
+### Provenance lesson: freezing template files is insufficient
+
+- **The gap.** Until Phase 6, `PLATFORM_FILES` was one global mapping. The
+  frozen 0.4.0 template files were pinned, but its `platform/*.json`
+  snapshots came from whatever the canonical `schemas/` contained at
+  generation time. Editing `telemetry-record.schema.json` for tools would
+  have silently changed what "frozen" 0.4.0 generates. **Freezing template
+  files is insufficient if their referenced platform contracts can silently
+  change.**
+- **The fix: one mapping per template version.**
+  `PLATFORM_FILES_BY_TEMPLATE_VERSION` gives each version (0.1.0 through
+  0.5.0) its exact canonical sources. 0.4.0 → telemetry v1; 0.5.0 →
+  `telemetry-record.v2.schema.json`.
+- **The fix: pinned contracts.** A new `FROZEN_CONTRACTS` test pins the
+  SHA-256 of **every** canonical schema, including v2 as released now. A test
+  also requires that every referenced source is pinned and every schema file
+  has a pin.
+- **Verified:** git shows the v1 canonical contracts and templates 0.1.0 to
+  0.4.0 byte-identical to HEAD, with no added files. The v1 filename was not
+  renamed; only new versions get a `.vN.` suffix.
+
+### Honest limits
+
+- **One proposal per response** is a Phase-6 runtime ceiling in
+  `tools.py`, not a manifest budget and not a universal design. It exists to
+  avoid partial multi-tool execution, ordering, rollback and transactions. A
+  future contract version could add `budgets.max_tool_requests`.
+- **What Phase 6 doesn't prove:**
+  - enterprise identity (there is no principal at all);
+  - RBAC or ABAC;
+  - production policy administration;
+  - human approval workflows;
+  - network isolation or sandboxing of executors;
+  - secrets safety;
+  - real side-effect idempotency (the ledger is in memory);
+  - distributed authorization;
+  - tamper-proof audit evidence;
+  - that the declared authority is appropriate;
+  - that an allowed action is semantically safe.
 
 ---
 

@@ -30,23 +30,48 @@ CAPABILITY_SCHEMA_PATH = LAB_ROOT / "schemas" / "capability.schema.json"
 EVAL_SUITE_SCHEMA_PATH = LAB_ROOT / "schemas" / "eval-suite.schema.json"
 EVAL_REPORT_SCHEMA_PATH = LAB_ROOT / "schemas" / "eval-report.schema.json"
 PRICING_SCHEMA_PATH = LAB_ROOT / "schemas" / "pricing.schema.json"
-TELEMETRY_RECORD_SCHEMA_PATH = LAB_ROOT / "schemas" / "telemetry-record.schema.json"
+TELEMETRY_RECORD_SCHEMA_PATH = LAB_ROOT / "schemas" / "telemetry-record.schema.json"  # v1, frozen
+TELEMETRY_RECORD_V2_SCHEMA_PATH = LAB_ROOT / "schemas" / "telemetry-record.v2.schema.json"
 
 TEMPLATE_ID = "capability"
 # The current template. Released template versions are immutable: a change to
 # generated output means a new version directory, never an edit to an old one.
-TEMPLATE_VERSION = "0.4.0"
+TEMPLATE_VERSION = "0.5.0"
 RENDER_SUFFIX = ".j2"
 
 # Platform-managed files copied byte-for-byte from canonical platform sources
 # rather than from the template, so a template cannot drift from the contract.
-PLATFORM_FILES = {
-    "platform/capability.schema.json": CAPABILITY_SCHEMA_PATH,
+#
+# The mapping is PER TEMPLATE VERSION. Freezing template files is not enough:
+# if a released template's platform snapshots came from a single global
+# mapping, editing or replacing a canonical contract would silently change what
+# that historical template generates. Each version therefore names exactly the
+# canonical contracts it was released with, and those canonical files are
+# pinned by SHA-256 in tests (FROZEN_CONTRACTS). Released contracts are never
+# edited; a changed contract gets a new versioned file (e.g. telemetry v2).
+_CAPABILITY_V1 = {"platform/capability.schema.json": CAPABILITY_SCHEMA_PATH}
+_EVALS_V1 = {
     "platform/eval-report.schema.json": EVAL_REPORT_SCHEMA_PATH,
     "platform/eval-suite.schema.json": EVAL_SUITE_SCHEMA_PATH,
-    "platform/pricing.schema.json": PRICING_SCHEMA_PATH,
-    "platform/telemetry-record.schema.json": TELEMETRY_RECORD_SCHEMA_PATH,
 }
+PLATFORM_FILES_BY_TEMPLATE_VERSION: dict[str, dict[str, Path]] = {
+    "0.1.0": {},
+    "0.2.0": {**_CAPABILITY_V1},
+    "0.3.0": {**_CAPABILITY_V1, **_EVALS_V1},
+    "0.4.0": {
+        **_CAPABILITY_V1,
+        **_EVALS_V1,
+        "platform/pricing.schema.json": PRICING_SCHEMA_PATH,
+        "platform/telemetry-record.schema.json": TELEMETRY_RECORD_SCHEMA_PATH,  # v1
+    },
+    "0.5.0": {
+        **_CAPABILITY_V1,
+        **_EVALS_V1,
+        "platform/pricing.schema.json": PRICING_SCHEMA_PATH,
+        "platform/telemetry-record.schema.json": TELEMETRY_RECORD_V2_SCHEMA_PATH,
+    },
+}
+PLATFORM_FILES = PLATFORM_FILES_BY_TEMPLATE_VERSION[TEMPLATE_VERSION]
 
 
 class ScaffoldError(Exception):

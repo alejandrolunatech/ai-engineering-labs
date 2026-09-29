@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Change Explainer starter output (synthetic)",
+  "description": "Starter default from the golden-path template. Replace with this capability's output contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["headline", "explanation", "risk_level", "open_questions"],
+  "properties": {
+    "headline": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "explanation": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "risk_level": { "enum": ["low", "medium", "high", "unknown"] },
+    "open_questions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+    }
+  }
+}

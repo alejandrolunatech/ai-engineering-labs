@@ -27,7 +27,7 @@ from conftest import only_record
 from golden_path import scaffold
 
 CAPABILITY = "runtime-demo"
-GENERATED_MODULES = {"capability", "contracts", "model_adapter", "evaluator", "telemetry", "cost"}
+GENERATED_MODULES = {"capability", "contracts", "model_adapter", "evaluator", "telemetry", "cost", "tools", "policy"}
 ALLOWED_THIRD_PARTY = {"jsonschema", "yaml", "pytest"}
 FORBIDDEN_IN_SRC = {
     "golden_path",
@@ -195,7 +195,7 @@ def test_cli_malformed_json_exits_2(project, blocked_env, tmp_path):
 @pytest.mark.parametrize(
     ("original", "replacement", "expected"),
     [
-        ("tools: []", "tools: [search_docs]", "no tool runtime"),
+        ("tools: []", "tools: [search_docs]", "no trusted registry implementation"),
         ("adapter: fake", "adapter: some-provider", "unknown adapter"),
         ("max_model_requests: 2", "max_model_requests: 0", "violates platform/capability.schema.json"),
         ("adapter: fake", "adapter: fake\n    api_key: redacted", "violates platform/capability.schema.json"),

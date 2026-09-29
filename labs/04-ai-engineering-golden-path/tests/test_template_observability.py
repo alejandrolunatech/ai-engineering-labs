@@ -23,7 +23,8 @@ from golden_path import scaffold
 
 CAPABILITY = "observable-demo"
 NONDETERMINISTIC = ("trace_id", "start_time_unix_ns", "duration_ms")
-TELEMETRY_SCHEMA = json.loads((scaffold.LAB_ROOT / "schemas" / "telemetry-record.schema.json").read_text())
+# The telemetry contract the CURRENT template snapshots (v2 from template 0.5.0).
+TELEMETRY_SCHEMA = json.loads(scaffold.PLATFORM_FILES["platform/telemetry-record.schema.json"].read_text())
 
 
 @pytest.fixture
@@ -60,17 +61,20 @@ def tree(root: Path) -> list[str]:
 
 @pytest.mark.parametrize("name", ["telemetry-record.schema.json", "pricing.schema.json"])
 def test_canonical_schemas_are_valid_and_snapshotted_byte_for_byte(project, name):
-    canonical = scaffold.LAB_ROOT / "schemas" / name
+    canonical = scaffold.PLATFORM_FILES[f"platform/{name}"]
     Draft202012Validator.check_schema(json.loads(canonical.read_text()))
     assert (project / "platform" / name).read_bytes() == canonical.read_bytes()
 
 
-def test_telemetry_schema_has_no_generic_attribute_map():
-    text = json.dumps(TELEMETRY_SCHEMA)
+@pytest.mark.parametrize("filename", ["telemetry-record.schema.json", "telemetry-record.v2.schema.json"])
+def test_telemetry_schemas_have_no_generic_attribute_map(filename):
+    schema = json.loads((scaffold.LAB_ROOT / "schemas" / filename).read_text())
+    text = json.dumps(schema)
     for escape_hatch in ('"metadata"', '"labels"', '"custom.attributes"'):
         assert escape_hatch not in text
-    for defn in ("runAttributes", "modelRequestAttributes"):
-        assert TELEMETRY_SCHEMA["$defs"][defn]["additionalProperties"] is False
+    for defn in ("runAttributes", "modelRequestAttributes", "toolRequestAttributes"):
+        if defn in schema["$defs"]:
+            assert schema["$defs"][defn]["additionalProperties"] is False
 
 
 def test_template_ships_with_no_prices(project):
