@@ -23,5 +23,6 @@ For Lab 01, read `labs/01-pr-guardian/README.md` before proposing changes.
 
 For Lab 02, read `labs/02-zero-trust-mcp-gateway/README.md` before proposing changes. In security reviews, distinguish **model influence**, **policy decision**, **gateway enforcement**, and **downstream execution**.
 
-
 For Lab 04, read `labs/04-ai-engineering-golden-path/README.md` and `ARCHITECTURE.md` before proposing changes. Reviews should challenge whether the golden path actually improves developer self-service while preserving explicit contracts, evals, observability, budgets, governance, and upgradeability. Distinguish platform defaults from hard security boundaries.
+
+For Lab 05, read `labs/05-production-llm-service/README.md`, `ARCHITECTURE.md`, and `THREAT-MODEL.md` before proposing changes. Treat it as a real future public service, not a local demo. Keep public GitHub content untrusted, keep secrets server-side, bound paid model work, preserve privacy-safe telemetry, and distinguish design-time targets from measured production evidence. Do not call the service production before the release Definition of Done is evidenced.
