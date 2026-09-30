@@ -1,0 +1,739 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-platform:schema:verification-report:v1",
+  "title": "Verification Report (ai.platform/v1)",
+  "description": "Machine-readable result of `ai-capability verify`. A passing report means only that all declared deterministic checks required by this verifier passed. It is not evidence of production readiness, semantic correctness, accuracy, security against every attack, appropriate business authority, real-provider behaviour, billing accuracy, tamper-proof provenance or successful deployment. The report deliberately has no timestamps, identifiers, absolute or temporary paths, durations, raw subprocess output, model output or offending values, so identical capability state produces identical bytes.",
+  "$comment": "Check ids and their order are fixed. A released version of this schema must not be mutated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "kind",
+    "meaning",
+    "verifier",
+    "capability",
+    "report_schema_validation",
+    "result",
+    "checks",
+    "evidence"
+  ],
+  "properties": {
+    "api_version": {
+      "const": "ai.platform/v1"
+    },
+    "kind": {
+      "const": "VerificationReport"
+    },
+    "meaning": {
+      "const": "declared_deterministic_checks_only"
+    },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        }
+      }
+    },
+    "capability": {
+      "description": "Copied from capability.yaml only when manifest.schema passed; otherwise null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "template_version"
+      ],
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "template_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "report_schema_validation": {
+      "description": "Whether this report was validated against a local verification-report snapshot whose hash matched the released contract. There is no signing: the verifier, snapshots and embedded hashes can all be edited together.",
+      "enum": [
+        "trusted_snapshot",
+        "not_performed_untrusted_snapshot"
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "total",
+        "pass",
+        "fail",
+        "skipped"
+      ],
+      "properties": {
+        "passed": {
+          "description": "True only when fail == 0 and skipped == 0.",
+          "type": "boolean"
+        },
+        "total": {
+          "const": 14
+        },
+        "pass": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fail": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "manifest.parse"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "provenance.platform_snapshots"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "manifest.schema"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "provenance.template_version"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "schemas.input"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "schemas.output"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "eval.suite"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "pricing.contract"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "budgets.contract"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "observability.contract"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "ci.workflow"
+            },
+            "kind": {
+              "const": "static"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "authority.declared_tools"
+            },
+            "kind": {
+              "const": "subprocess"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "tests.gate"
+            },
+            "kind": {
+              "const": "subprocess"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/check"
+            }
+          ],
+          "properties": {
+            "id": {
+              "const": "eval.gate"
+            },
+            "kind": {
+              "const": "subprocess"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "budgets",
+        "observability",
+        "tests",
+        "eval"
+      ],
+      "properties": {
+        "authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "declared_tools",
+            "unregistered_count",
+            "runtime_authorization"
+          ],
+          "properties": {
+            "declared_tools": {
+              "description": "Declared AND registered tools with trusted registry impact. A valid declaration is not runtime authorization.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "impact"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9]*([_-][a-z0-9]+)*$"
+                  },
+                  "impact": {
+                    "enum": [
+                      "low",
+                      "high"
+                    ]
+                  }
+                }
+              }
+            },
+            "unregistered_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "runtime_authorization": {
+              "const": "not_evaluated_by_verifier"
+            }
+          }
+        },
+        "budgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_model_requests",
+            "max_output_tokens",
+            "max_latency_ms",
+            "enforced_at_runtime"
+          ],
+          "properties": {
+            "max_model_requests": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "max_output_tokens": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "max_latency_ms": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "enforced_at_runtime": {
+              "const": [
+                "max_model_requests"
+              ]
+            }
+          }
+        },
+        "observability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tracing",
+            "usage",
+            "cost",
+            "delivery_tested"
+          ],
+          "properties": {
+            "tracing": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "usage": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "cost": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "delivery_tested": {
+              "description": "Valid configuration is not proof that telemetry was delivered.",
+              "const": false
+            }
+          }
+        },
+        "tests": {
+          "description": "tests.gate: deterministic engineering and control invariants. Aggregate counts only; no test ids, output or durations.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome",
+            "tests",
+            "failures",
+            "errors",
+            "skipped"
+          ],
+          "properties": {
+            "outcome": {
+              "enum": [
+                "passed",
+                "failed",
+                "no_tests",
+                "error",
+                "timeout"
+              ]
+            },
+            "tests": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "failures": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "errors": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "skipped": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "eval": {
+          "description": "eval.gate: declared behavioural expectations on a finite synthetic suite, as reported by the capability's own evaluator. Null values mean not evaluated.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gate_passed",
+            "total",
+            "passed",
+            "failed",
+            "observed_pass_rate",
+            "required_pass_rate",
+            "suite_sha256"
+          ],
+          "properties": {
+            "gate_passed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "passed": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "failed": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "observed_pass_rate": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            },
+            "required_pass_rate": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            },
+            "suite_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "checkId": {
+      "enum": [
+        "manifest.parse",
+        "provenance.platform_snapshots",
+        "manifest.schema",
+        "provenance.template_version",
+        "schemas.input",
+        "schemas.output",
+        "eval.suite",
+        "pricing.contract",
+        "budgets.contract",
+        "observability.contract",
+        "ci.workflow",
+        "authority.declared_tools",
+        "tests.gate",
+        "eval.gate"
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "reason",
+        "prerequisites",
+        "failed_rules",
+        "locations"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/checkId"
+        },
+        "kind": {
+          "enum": [
+            "static",
+            "subprocess"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "skipped"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "missing",
+            "unparseable",
+            "schema_violation",
+            "path_escape",
+            "not_a_json_schema",
+            "version_mismatch",
+            "hash_mismatch",
+            "unregistered_tools",
+            "registry_unavailable",
+            "tests_failed",
+            "tests_error",
+            "no_tests",
+            "gate_not_met",
+            "evaluator_error",
+            "timeout",
+            "workflow_invalid",
+            "workflow_permissions",
+            "workflow_missing_verify",
+            "workflow_duplicates_verifier",
+            "prerequisite_failed",
+            null
+          ]
+        },
+        "prerequisites": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/checkId"
+          }
+        },
+        "failed_rules": {
+          "description": "JSON Schema keywords only; never offending values.",
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_$]{1,40}$"
+          }
+        },
+        "locations": {
+          "description": "Schema paths or project-relative file paths only; never values.",
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_./-]{1,200}$"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "pass"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "null"
+              },
+              "prerequisites": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "skipped"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "const": "prerequisite_failed"
+              },
+              "prerequisites": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "fail"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "string",
+                "not": {
+                  "const": "prerequisite_failed"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

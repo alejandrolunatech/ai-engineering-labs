@@ -1,0 +1,32 @@
+# Packaging metadata ONLY for the local `ai-capability` command.
+#
+# `version` below is NOT the capability version (capability.yaml
+# metadata.version), NOT the template version (metadata.template_version) and
+# NOT the verifier version (VERIFIER_VERSION in verifier/ai_capability.py).
+# Only the verifier module is installed; the capability runtime (src/) is not
+# packaged and still runs from the project root.
+#
+# Setup (from this directory):
+#   python -m pip install -r requirements.txt
+#   python -m pip install -e . --no-deps --no-build-isolation
+[build-system]
+requires = ["setuptools>=70.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "{{ name }}"
+version = "0.0.0"
+description = "Local verification command for the {{ name }} capability (not a distributable package)."
+requires-python = ">=3.11"
+dependencies = []  # requirements.txt is authoritative; install with --no-deps
+
+[project.scripts]
+ai-capability = "ai_capability:main"
+
+[tool.setuptools]
+package-dir = { "" = "verifier" }
+py-modules = ["ai_capability"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "evals", "verifier"]
+testpaths = ["tests"]

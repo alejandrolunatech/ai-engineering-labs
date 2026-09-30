@@ -1169,17 +1169,202 @@ and its `tests/test_tools.py` run against it. All 11 were caught:
 
 ## Verification and CI
 
+Evidence:
+- **Template:** `templates/capability/0.6.0/`, which adds:
+  - `verifier/ai_capability.py`, the `ai-capability verify` command;
+  - `.github/workflows/ai-capability-verify.yml` and `.gitignore`;
+  - `tests/test_verify.py` (44 tests);
+  - `pyproject.toml.j2`, which installs only the verifier;
+  - `setuptools>=70.1` in `requirements.txt`;
+  - a snapshot of the new canonical `schemas/verification-report.schema.json`
+    (verification-report v1).
+- **Platform tests:** `tests/test_template_verify.py`, running real
+  subprocess verifications with `golden_path` import-blocked, plus
+  provenance and dot-path tests in `tests/test_scaffold.py`.
+- **Manual run outside the repo:** `ai-golden-path new verified-demo`
+  recorded `template_version: "0.6.0"`. It was installed in a **fresh venv**
+  exactly as documented:
+
+  ```
+  python -m pip install -r requirements.txt
+  python -m pip install -e . --no-deps --no-build-isolation   # no hidden build fetch
+  ai-capability verify
+  ```
+
+  Only `ai_capability` became importable. `tools`, `capability` and
+  `contracts` were not installed.
+
+**Template chain:** 0.1.0 contract → 0.2.0 executable → 0.3.0 evaluated →
+0.4.0 observable → 0.5.0 bounded authority → 0.6.0 verifiable and CI-gated.
+0.5.0 was frozen with its 21 file digests. `src/` is unchanged from 0.5.0.
+
 ### What does a green verify actually prove?
 
-_Write here._
+**A green verifier means the declared deterministic checks passed.**
+`verified-demo` gave exit 0 with `14 pass, 0 fail, 0 skipped`.
+
+- **Output.** stdout is only the VerificationReport JSON, validated against
+  the canonical schema in platform tests. stderr is a plain-text checklist.
+- **Fixed checks.** There are 14 checks in a fixed order, enumerated in the
+  schema with `prefixItems`:
+
+  `manifest.parse → provenance.platform_snapshots → manifest.schema →
+  provenance.template_version → schemas.input → schemas.output → eval.suite →
+  pricing.contract → budgets.contract → observability.contract → ci.workflow →
+  authority.declared_tools → tests.gate → eval.gate`
+
+- **Determinism.** Four runs (default twice, `PYTHONHASHSEED=0`,
+  `PYTHONHASHSEED=12345`) produced **byte-identical** reports: SHA-256
+  `c720a69f…`. The report has no timestamps, IDs, paths, durations or raw
+  subprocess output.
+- **No skips as soft passes.** A skip is allowed only when a named
+  prerequisite failed. `result.passed` requires 0 fail **and** 0 skipped. A
+  mutation that let skips pass initially **survived** the tests; I factored
+  `summarize()` out so the rule is directly tested, and it is now caught.
+- **Built-in honesty fields:**
+  - `meaning: declared_deterministic_checks_only`;
+  - `runtime_authorization: not_evaluated_by_verifier`;
+  - `enforced_at_runtime: [max_model_requests]`;
+  - `delivery_tested: false`.
+
+**A verifier must first establish trust in the contract snapshot before
+claiming results derived from that contract.**
+- Each of the six `platform/*.json` snapshots must match the released
+  SHA-256 embedded in the verifier *before* anything is validated against
+  it. A platform test pins those embedded hashes to the canonical contracts
+  of the 0.6.0 mapping.
+- **Demo:** I weakened `platform/capability.schema.json` (budget maximum 10 →
+  1000) and set `max_model_requests: 500`. The result:
+  - `provenance.platform_snapshots` failed (`hash_mismatch`, location
+    `platform/capability.schema.json`);
+  - `manifest.schema`, `budgets.contract` and `observability.contract` were
+    **skipped** (prerequisite `provenance.platform_snapshots`), **never
+    passed**;
+  - exit 1.
+- A mutation that trusts a snapshot despite a hash mismatch is caught by 3
+  tests.
+- **Per contract:** a tampered eval-suite snapshot skips only `eval.suite`,
+  and `manifest.schema` still passes on its own trusted contract.
+- **A tampered report contract** sets `report_schema_validation:
+  not_performed_untrusted_snapshot` and fails provenance.
+
+**CI should execute policy, not duplicate policy.**
+- The workflow is transport only: checkout, `setup-python` 3.12, the two
+  documented install commands, and `ai-capability verify`, with
+  `permissions: contents: read` and `persist-credentials: false`.
+- Its verification step is literally the local command; a platform test
+  asserts that the workflow's run steps equal the documented setup sequence.
+- The verifier's own `ci.workflow` check fails if CI runs pytest, the
+  evaluator or schema checks (`workflow_duplicates_verifier`), drops the
+  verify step, or widens permissions. Unrelated steps such as linting are
+  allowed.
+- **YAML pitfall:** plain `yaml.safe_load` parses the workflow's `on:` key as
+  `True` (keys `['name', True, 'permissions', 'jobs']`). The verifier uses a
+  separate workflow loader that accepts only true/false as booleans (keys
+  `['name', 'on', 'permissions', 'jobs']`), and a regression test pins this.
+  The strict manifest loader was left unchanged.
+
+### tests != evals (a real coupling found and fixed)
+
+- **What happened.** The first mutation matrix run showed that adding a
+  failing eval case also failed `tests.gate`. The Phase 4 generated
+  `tests/test_evals.py` had `test_default_suite_passes_gate` and similar
+  assertions that the *live* suite passes. The test gate was quietly
+  re-running the eval gate, and the verifier made that visible.
+- **The fix (0.6.0 only; released templates unchanged).** Eval-kit tests now
+  check the *harness*: the gate is consistent with its own summary and exit
+  code, and the threshold arithmetic works. They no longer check whether the
+  product's current cases pass. `test_verify.py` uses a canned, clearly fake
+  EvalReport, like its fake test runner.
+- **Demo afterwards:** with the `AUTHORS.md` case appended, the generated
+  suite still passed (167/167), `tests.gate` **passed**, and `eval.gate`
+  failed alone with `gate_not_met` (8/9, observed 0.888…). Exit 1.
+- In the report, `tests.gate` is described as engineering and control
+  invariants, and `eval.gate` as declared behavioural expectations. A green
+  test gate is not model quality, and a green eval gate is not production
+  readiness.
 
 ### What does it not prove?
 
-_Write here._
+- production readiness;
+- semantic truth, **schema validity != runtime correctness** (valid input and
+  output schemas say nothing about all runtime data);
+- model accuracy;
+- security against every attack;
+- appropriate business authority. A declared high-impact tool *passes*
+  `authority.declared_tools` because declaration is not authorization;
+- real-provider behaviour, real latency or real billing;
+- successful deployment;
+- absence of secrets (there is no secret scanning);
+- that CI can't be bypassed by repository administrators.
+
+**provenance consistency != tamper-proof attestation.** The verifier, the
+snapshots and the embedded hashes all live in the product repository, so
+someone with write access can edit all three together. There is no signing.
+A platform-side re-verification with a pristine verifier (a hybrid model) is
+a named future gap.
+
+The recursion guard (`AI_CAPABILITY_VERIFY_ACTIVE`) is an engineering
+guard, not a security boundary.
+
+**Supply chain.** Actions are pinned to major tags, not SHAs, so the workflow
+is not supply-chain hardened. GitHub only runs workflows from the repository
+root. A scratch capability inside this monorepo will not run its nested
+workflow; the real runner execution needs its own repository.
 
 ### Failure cases caught
 
-_Write here._
+These are from manual runs on copies of `verified-demo` with the installed
+`ai-capability`. Every case exited 1.
+
+| Mutation | Result |
+|---|---|
+| `max_model_requests: 11` | `manifest.schema` + `budgets.contract` fail (`maximum`, location `spec/budgets/max_model_requests`); `eval.gate` skipped. The value 11 does not appear in the report (a word-bounded search found only `"failures": 111`). |
+| Weakened capability snapshot | provenance fail; derived checks skipped (see above) |
+| `schemas/input.schema.json` removed | `schemas.input` fail/`missing`; `eval.gate` skipped (prerequisite `schemas.input`) |
+| `tools: [search_docs]` | `authority.declared_tools` fail/`unregistered_tools`, evidence `unregistered_count: 1`; the name appears only on stderr. The registry probe imports `src/tools.py` in a subprocess and calls no model, tool or policy. `tests.gate` still ran independently and failed (75/171), because the runtime refuses an unregistered declaration. `eval.gate` is **skipped** (prerequisite `authority.declared_tools`): the evaluator executes the real runtime, so a statically invalid tool declaration leaves no declared behaviour to evaluate. (Before this cleanup the evaluator ran, exited 3 and was reported as `evaluator_error`, which blamed the evaluator for a configuration fault.) Exit 1; reports byte-identical across `PYTHONHASHSEED` 0/1. |
+| A failing pytest test | `tests.gate` fail/`tests_failed`; evidence `{tests: 169, failures: 1, ...}`; the failing test name appears **only** on stderr |
+| `AUTHORS.md` eval case | `tests.gate` pass, `eval.gate` fail/`gate_not_met` |
+
+**Platform mutation matrix** (18 real subprocess verifications):
+- YAML syntax;
+- an unknown field;
+- missing and malformed schemas;
+- a symlink path escape;
+- a template-version mismatch;
+- a tampered snapshot;
+- an unregistered tool;
+- a budget out of range;
+- tracing disabled;
+- a pytest failure;
+- the eval threshold;
+- a malformed suite;
+- missing pricing;
+- a workflow that runs pytest;
+- three contract-tamper dependency cases.
+
+In each, the named check fails, and every skip names a prerequisite that did
+not pass.
+
+**Verifier mutation evidence.** Each mutation was applied to a generated
+verifier and its `tests/test_verify.py` run against it. All 11 were caught:
+- trusting a tampered snapshot;
+- skips not failing the result (after the fix);
+- the budgets check always passing;
+- the evaluator exit code trusted blindly;
+- the workflow allowed to run pytest;
+- the workflow parsed with the plain loader;
+- the recursion guard removed;
+- the offending budget value surfaced;
+- no symlink resolution;
+- unregistered tools ignored.
+
+**A lesson from mutation testing.** The first version of the recursion-guard
+test called `main(["verify"])` with the *real* runners. With the guard
+removed, it really recursed (verifier → pytest → verifier …), spawning about
+90 processes until I stopped it. The test now uses fake runners, so a broken
+guard fails fast instead of recursing. A test for a safety guard must not
+depend on that guard to stay safe.
 
 ---
 

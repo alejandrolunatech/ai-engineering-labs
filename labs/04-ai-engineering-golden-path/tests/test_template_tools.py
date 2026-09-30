@@ -95,7 +95,7 @@ def tool_span(row: dict) -> dict:
 
 def test_generated_default_grants_no_tools(project):
     manifest = yaml.safe_load((project / "capability.yaml").read_text())
-    assert manifest["metadata"]["template_version"] == scaffold.TEMPLATE_VERSION == "0.5.0"
+    assert manifest["metadata"]["template_version"] == scaffold.TEMPLATE_VERSION  # 0.5.0+: tools supported, none granted
     assert manifest["spec"]["authority"]["tools"] == []
 
 

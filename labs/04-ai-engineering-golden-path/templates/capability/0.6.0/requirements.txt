@@ -1,0 +1,6 @@
+jsonschema>=4,<5
+PyYAML>=6,<7
+pytest>=8,<9
+# Build backend for the local `ai-capability` command. Declared here so that
+# `pip install -e . --no-deps --no-build-isolation` needs no hidden fetch.
+setuptools>=70.1

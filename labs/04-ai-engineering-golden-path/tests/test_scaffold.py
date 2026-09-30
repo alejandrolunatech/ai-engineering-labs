@@ -37,8 +37,10 @@ from test_capability_schema import (
 )
 
 LAB_ROOT = Path(__file__).resolve().parents[1]
-# Tree produced by the CURRENT template version (capability@0.5.0).
+# Tree produced by the CURRENT template version (capability@0.6.0).
 EXPECTED_TREE = [
+    ".github/workflows/ai-capability-verify.yml",
+    ".gitignore",
     "README.md",
     "capability.yaml",
     "evals/cases.yaml",
@@ -49,6 +51,7 @@ EXPECTED_TREE = [
     "platform/eval-suite.schema.json",
     "platform/pricing.schema.json",
     "platform/telemetry-record.schema.json",
+    "platform/verification-report.schema.json",
     "pricing.yaml",
     "pyproject.toml",
     "requirements.txt",
@@ -65,11 +68,13 @@ EXPECTED_TREE = [
     "tests/test_evals.py",
     "tests/test_telemetry.py",
     "tests/test_tools.py",
+    "tests/test_verify.py",
+    "verifier/ai_capability.py",
 ]
 
 # Released templates are immutable. These digests pin each released version
 # exactly as committed (0.1.0 in Phase 2, 0.2.0 in Phase 3, 0.3.0 in Phase 4,
-# 0.4.0 in Phase 5); any change to
+# 0.4.0 in Phase 5, 0.5.0 in Phase 6); any change to
 # generated output must become a new template version instead.
 FROZEN_TEMPLATES = {
     "0.1.0": {
@@ -90,6 +95,29 @@ FROZEN_TEMPLATES = {
         "src/contracts.py": "819c2769d41756339866dedc17f6d4aaca78487de2a9fea37bc492b3282d2ff3",
         "src/model_adapter.py": "c4d276f4749ccc3c21e4de609e87162d90a911c50ebbeac5280f2276602b0c5a",
         "tests/test_capability.py": "9d5d6c199295502caa54b32168e6c38674a6a8e830073088900277ba10d4b125",
+    },
+    "0.5.0": {
+        "README.md.j2": "372160a3b6e41d1dd3306b48a07b454b015118cf17c417b3acc159ad68ee37f0",
+        "capability.yaml.j2": "b4e97de028b1930abe750e81513c25a0a5f63339919eb6c139a8e48ae0664891",
+        "evals/cases.yaml": "5726963364a07b5eddcebecec9b7c4ae914a429256632f1b4da60cd643347187",
+        "evals/evaluator.py": "b13d6ea402660a533baa522e838d17028d639fd66183c28539cbdbec502381af",
+        "fixtures/sample_input.json": "4c20a26777581c984e430aaf892c63c67c94ab686beba13c03a2d51105e0c6f3",
+        "pricing.yaml": "8cf0d2d8b4c427bc4744cb87d84d89ad9889f239913a122fe8fa2c34eb90305e",
+        "pyproject.toml": "0e0b0ea22f9940538eca1098ddf495964117d382ec5bf608016120aae7e9f393",
+        "requirements.txt": "bcb619e79ee54b01399e61246ecf9d186224c4ac0bdb9be656bbf77314689d99",
+        "schemas/input.schema.json": "30a49ee496efc3a7f55cf50bc74de7d16b9852d8c80c58b03d02b5f98e2b716d",
+        "schemas/output.schema.json": "64b84ca89036e3c2af93c3184cfac927e468caedd314ae7463e9b5dcc785f029",
+        "src/capability.py": "6796a0f3163f7585ae8ee9121342b06a122b0f38003d53a47f43875e1a3df6b9",
+        "src/contracts.py": "0d0f30e3f84a7540c63189c4f604a66dc8b7022f7343b94916cb1d3d0f20b365",
+        "src/cost.py": "1fd08246145ea28cca7ad68915f2969f98d52c4504d8c05b12e288c27d38b63d",
+        "src/model_adapter.py": "a924419c23bcb2d57c3126ae52acd8d9e65bebee20028f0c9e38391c6a100e6b",
+        "src/policy.py": "9c607df76763a5d29f26b71c62bdeecff342b753143dae0a0889753b041d3b8a",
+        "src/telemetry.py": "8318c455824361db27f3b15625b62e0dd533fcf6e01f8e3edcc5a03a8a61c719",
+        "src/tools.py": "f6be6e0f5e55dba0ad62dd388c93728443f543641eeca9162738eef3b45aad1a",
+        "tests/test_capability.py": "21d42a8f7e358ad80cf214155c0cd994beff44fea5257353c9ceef1b686b1f72",
+        "tests/test_evals.py": "7b35b2fa42a77312a762d58ce70902ba3fbca2e5da210b1e17feb1a542d99f59",
+        "tests/test_telemetry.py": "646fca7b1697c371e82105bede375dd1548725c478d46e1da80a1898d4def9e0",
+        "tests/test_tools.py": "c8509d1cb62beb05fe82b08d04d28c8070720d54fda5532e41ec73a475e9c746",
     },
     "0.4.0": {
         "README.md.j2": "fffd6abe07276c222888d57436662f3934a880a588c63fe2ac7884bddaa1cd2b",
@@ -225,15 +253,17 @@ def test_invalid_name_creates_nothing(tmp_path, monkeypatch, name):
 
 def test_template_directory_matches_declared_version():
     root = scaffold.template_dir()
-    assert root.name == scaffold.TEMPLATE_VERSION == "0.5.0"
+    assert root.name == scaffold.TEMPLATE_VERSION == "0.6.0"
     assert [p.relative_to(root).as_posix() for p in scaffold.template_sources()] == [
+        ".github/workflows/ai-capability-verify.yml",
+        ".gitignore",
         "README.md.j2",
         "capability.yaml.j2",
         "evals/cases.yaml",
         "evals/evaluator.py",
         "fixtures/sample_input.json",
         "pricing.yaml",
-        "pyproject.toml",
+        "pyproject.toml.j2",
         "requirements.txt",
         "schemas/input.schema.json",
         "schemas/output.schema.json",
@@ -248,6 +278,8 @@ def test_template_directory_matches_declared_version():
         "tests/test_evals.py",
         "tests/test_telemetry.py",
         "tests/test_tools.py",
+        "tests/test_verify.py",
+        "verifier/ai_capability.py",
     ]
 
 
@@ -489,6 +521,7 @@ FROZEN_CONTRACTS = {
     "eval-suite.schema.json": "4d38a26709012cfc5ff07dd00a3a36b2b9f243de985f0d47b12d513fd130bf83",
     "pricing.schema.json": "307d949a70fb3c9ee5c5791a5bcdc8b479b687811ee96b9a64503d241e7280b9",
     "telemetry-record.schema.json": "8e8dfd7c34c84d3963dd621342c9ec08ba59eeed4045b6d41e94008b9178e2e3",
+    "verification-report.schema.json": "795b8182e5f266b838df3c496e2c9486ffd61aaeab501995d11fa75dae435dd2",  # released in Phase 7
     "telemetry-record.v2.schema.json": "52c861a6b35bdf1c0b68cc57bdc6733302226c5f44e860ddac0b58b8ea455b24",  # released in Phase 6
 }
 
@@ -518,6 +551,9 @@ def test_historical_templates_keep_their_original_contracts():
     mapping = scaffold.PLATFORM_FILES_BY_TEMPLATE_VERSION
     assert mapping["0.4.0"][telemetry].name == "telemetry-record.schema.json"  # v1
     assert mapping["0.5.0"][telemetry].name == "telemetry-record.v2.schema.json"
+    assert mapping["0.6.0"][telemetry].name == "telemetry-record.v2.schema.json"
+    report = "platform/verification-report.schema.json"
+    assert report in mapping["0.6.0"] and all(report not in mapping[v] for v in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"))
     assert telemetry not in mapping["0.3.0"] and "platform/pricing.schema.json" not in mapping["0.3.0"]
     assert set(mapping["0.3.0"]) == {
         "platform/capability.schema.json",
@@ -526,3 +562,50 @@ def test_historical_templates_keep_their_original_contracts():
     }
     assert set(mapping["0.2.0"]) == {"platform/capability.schema.json"}
     assert mapping["0.1.0"] == {}
+
+
+# --------------------------------------------------------------------------
+# Hidden paths: only explicitly supported dot paths are generated
+# --------------------------------------------------------------------------
+
+
+def test_github_workflow_and_gitignore_are_generated(tmp_path):
+    destination, files = scaffold.new_capability("dotted-demo", tmp_path)
+    assert (destination / ".github" / "workflows" / "ai-capability-verify.yml").is_file()
+    assert (destination / ".gitignore").is_file()
+    assert ".github/workflows/ai-capability-verify.yml" in files and ".gitignore" in files
+
+
+def _template_copy(tmp_path, monkeypatch):
+    root = tmp_path / "templates"
+    shutil.copytree(scaffold.TEMPLATES_ROOT, root)
+    monkeypatch.setattr(scaffold, "TEMPLATES_ROOT", root)
+    return root / scaffold.TEMPLATE_ID / scaffold.TEMPLATE_VERSION
+
+
+def test_os_metadata_is_still_ignored(tmp_path, monkeypatch):
+    template = _template_copy(tmp_path, monkeypatch)
+    (template / ".DS_Store").write_bytes(b"\x00junk")
+    (template / "src" / ".DS_Store").write_bytes(b"\x00junk")
+    (template / "src" / "__pycache__").mkdir()
+    (template / "src" / "__pycache__" / "x.cpython-314.pyc").write_bytes(b"junk")
+    files = scaffold.render("dotted-demo")
+    assert not any(".DS_Store" in path or "__pycache__" in path or path.endswith(".pyc") for path in files)
+
+
+@pytest.mark.parametrize("hidden", [".secrets/token.txt", ".env", "src/.hidden_helper.py", ".github/../.vscode/settings.json"])
+def test_unexpected_hidden_paths_fail_loudly(tmp_path, monkeypatch, hidden):
+    template = _template_copy(tmp_path, monkeypatch)
+    target = template / hidden
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("should never be copied")
+    with pytest.raises(scaffold.TemplateContractError, match="unsupported hidden path"):
+        scaffold.render("dotted-demo")
+
+
+def test_released_templates_contain_no_dot_paths():
+    # The allowlist change cannot alter what 0.1.0-0.5.0 generate: they contain no dot paths.
+    for version in FROZEN_TEMPLATES:
+        root = scaffold.TEMPLATES_ROOT / scaffold.TEMPLATE_ID / version
+        assert all(not part.startswith(".") for p in root.rglob("*") for part in p.relative_to(root).parts
+                   if part not in (".DS_Store",))

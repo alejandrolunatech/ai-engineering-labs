@@ -27,7 +27,7 @@ from conftest import only_record
 from golden_path import scaffold
 
 CAPABILITY = "runtime-demo"
-GENERATED_MODULES = {"capability", "contracts", "model_adapter", "evaluator", "telemetry", "cost", "tools", "policy"}
+GENERATED_MODULES = {"capability", "contracts", "model_adapter", "evaluator", "telemetry", "cost", "tools", "policy", "ai_capability"}
 ALLOWED_THIRD_PARTY = {"jsonschema", "yaml", "pytest"}
 FORBIDDEN_IN_SRC = {
     "golden_path",

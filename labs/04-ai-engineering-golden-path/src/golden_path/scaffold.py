@@ -32,11 +32,12 @@ EVAL_REPORT_SCHEMA_PATH = LAB_ROOT / "schemas" / "eval-report.schema.json"
 PRICING_SCHEMA_PATH = LAB_ROOT / "schemas" / "pricing.schema.json"
 TELEMETRY_RECORD_SCHEMA_PATH = LAB_ROOT / "schemas" / "telemetry-record.schema.json"  # v1, frozen
 TELEMETRY_RECORD_V2_SCHEMA_PATH = LAB_ROOT / "schemas" / "telemetry-record.v2.schema.json"
+VERIFICATION_REPORT_SCHEMA_PATH = LAB_ROOT / "schemas" / "verification-report.schema.json"
 
 TEMPLATE_ID = "capability"
 # The current template. Released template versions are immutable: a change to
 # generated output means a new version directory, never an edit to an old one.
-TEMPLATE_VERSION = "0.5.0"
+TEMPLATE_VERSION = "0.6.0"
 RENDER_SUFFIX = ".j2"
 
 # Platform-managed files copied byte-for-byte from canonical platform sources
@@ -69,6 +70,13 @@ PLATFORM_FILES_BY_TEMPLATE_VERSION: dict[str, dict[str, Path]] = {
         **_EVALS_V1,
         "platform/pricing.schema.json": PRICING_SCHEMA_PATH,
         "platform/telemetry-record.schema.json": TELEMETRY_RECORD_V2_SCHEMA_PATH,
+    },
+    "0.6.0": {
+        **_CAPABILITY_V1,
+        **_EVALS_V1,
+        "platform/pricing.schema.json": PRICING_SCHEMA_PATH,
+        "platform/telemetry-record.schema.json": TELEMETRY_RECORD_V2_SCHEMA_PATH,
+        "platform/verification-report.schema.json": VERIFICATION_REPORT_SCHEMA_PATH,
     },
 }
 PLATFORM_FILES = PLATFORM_FILES_BY_TEMPLATE_VERSION[TEMPLATE_VERSION]
@@ -124,18 +132,34 @@ def template_dir() -> Path:
     return TEMPLATES_ROOT / TEMPLATE_ID / TEMPLATE_VERSION
 
 
-def template_sources() -> list[Path]:
-    root = template_dir()
-    # Dotfiles and bytecode caches are skipped so OS metadata (e.g. .DS_Store) or
-    # __pycache__ from running template code never leaks into output.
-    return sorted(
-        path
-        for path in root.rglob("*")
-        if path.is_file()
-        and not any(
-            part.startswith(".") or part == "__pycache__" for part in path.relative_to(root).parts
-        )
-    )
+# Hidden paths a template may intentionally generate. Everything else that
+# starts with "." is either ignorable local metadata or a template error.
+ALLOWED_DOT_PATHS = frozenset({".github", ".gitignore"})
+# Accidental local/generated metadata that must never leak into output.
+IGNORED_NAMES = frozenset({".DS_Store", "__pycache__", ".pytest_cache"})
+IGNORED_SUFFIXES = (".pyc",)
+
+
+def template_sources(root: Path | None = None) -> list[Path]:
+    """Files a template version generates.
+
+    Only explicitly allowed dot paths (.github/, .gitignore) are generated.
+    OS/bytecode metadata is ignored. Any other dot path is rejected loudly
+    rather than silently copied or silently dropped.
+    """
+    root = root or template_dir()
+    sources = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        parts = path.relative_to(root).parts
+        if any(part in IGNORED_NAMES for part in parts) or path.name.endswith(IGNORED_SUFFIXES):
+            continue
+        unexpected = [part for part in parts if part.startswith(".") and part not in ALLOWED_DOT_PATHS]
+        if unexpected:
+            raise TemplateContractError(f"template contains an unsupported hidden path: {unexpected[0]}")
+        sources.append(path)
+    return sorted(sources)
 
 
 def render(name: str) -> dict[str, bytes]:

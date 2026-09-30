@@ -1,0 +1,148 @@
+# Eval suite for this capability. Owned by the product team.
+#
+# Format: platform/eval-suite.schema.json (ai.platform/v1, kind EvalSuite).
+# Run:    python evals/evaluator.py
+#
+# Each case states the behavioral promise it checks in `property`.
+# Expectations are deterministic: enum membership, emptiness, and substring
+# checks. Substring checks are LEXICAL only; they do not prove meaning.
+#
+# All inputs are synthetic. Do not put real data in this file.
+#
+# A green run means the declared expectations in this finite synthetic suite
+# were satisfied by the configured adapter. It does not measure accuracy,
+# unseen-input robustness, safety, fairness, or real-provider quality.
+api_version: ai.platform/v1
+kind: EvalSuite
+
+cases:
+  # --- behavior of the configured adapter ---------------------------------
+
+  - id: clear-change
+    kind: expect_success
+    property: >-
+      A clearly described, contained change is explained without invented risk
+      or questions, and cites the right change identifier and file count.
+    input:
+      change_id: CHG-2001
+      title: Add CSV export to the monthly report page
+      summary: >-
+        Adds a button that downloads the monthly report as a CSV file.
+        Existing report views are unchanged.
+      files_changed:
+        - src/reports/export.py
+        - src/reports/views.py
+        - tests/test_report_export.py
+    expect:
+      risk_level_in: [low]
+      open_questions: empty
+      headline_contains: ["CHG-2001"]
+      explanation_contains: ["3 file"]
+
+  - id: ambiguous-change
+    kind: expect_success
+    property: >-
+      A vaguely described change does not receive a confident low-risk claim
+      and raises at least one open question.
+    input:
+      change_id: CHG-2002
+      title: Updates
+      summary: Various fixes.
+      files_changed:
+        - src/api/handlers.py
+        - src/api/routes.py
+    expect:
+      risk_level_in: [unknown, medium, high]
+      open_questions: non_empty
+      headline_contains: ["CHG-2002"]
+
+  - id: insufficient-context
+    kind: expect_success
+    property: >-
+      When no changed files are listed, the explanation admits the risk is
+      unknown and asks for the missing context instead of guessing.
+    input:
+      change_id: CHG-2003
+      title: Hotfix
+      summary: Emergency fix applied directly.
+      files_changed: []
+    expect:
+      risk_level_in: [unknown]
+      open_questions: non_empty
+
+  - id: risky-payment-change
+    kind: expect_success
+    property: >-
+      A change to payment code is classified as high risk.
+    input:
+      change_id: CHG-2004
+      title: Change refund rounding
+      summary: >-
+        Changes how partial refunds are rounded before they are sent to the
+        payment processor.
+      files_changed:
+        - src/payments/refunds.py
+        - src/payments/rounding.py
+    expect:
+      risk_level_in: [high]
+      headline_contains: ["CHG-2004"]
+
+  - id: benign-refactor
+    kind: expect_success
+    property: >-
+      A small, described refactor with no intended behavior change is not
+      over-flagged and raises no open questions.
+    input:
+      change_id: CHG-2005
+      title: Rename internal helper
+      summary: >-
+        Renames an internal formatting helper and updates its call sites. No
+        behavior change is intended.
+      files_changed:
+        - src/reports/formatting.py
+        - src/reports/views.py
+    expect:
+      risk_level_in: [low]
+      open_questions: empty
+
+  # --- boundaries the capability promises to enforce -----------------------
+
+  - id: reject-input-missing-summary
+    kind: expect_input_rejected
+    property: >-
+      Input without a summary is refused before any model request is made.
+    input:
+      change_id: CHG-2006
+      title: Missing summary
+      files_changed:
+        - src/app.py
+
+  - id: reject-input-bad-change-id
+    kind: expect_input_rejected
+    property: >-
+      A change identifier that does not match the CHG-<digits> format is
+      refused before any model request is made.
+    input:
+      change_id: "2007"
+      title: Bad identifier
+      summary: The identifier is missing its CHG prefix.
+      files_changed:
+        - src/app.py
+
+  - id: reject-malformed-model-output
+    kind: expect_output_rejected
+    property: >-
+      Neither prose nor partial JSON from the model ever becomes a result;
+      retries stop at max_model_requests.
+    input:
+      change_id: CHG-2008
+      title: Well-formed input
+      summary: A well-formed input paired with malformed model responses.
+      files_changed:
+        - src/app.py
+    # Replayed exactly as written by a scripted FakeModelAdapter, one entry
+    # per model request. This case declares two because max_model_requests is
+    # 2; if that budget changes, update this script deliberately.
+    model_script:
+      - "The change looks low risk."
+      - '{"headline": "CHG-2008: x", "risk_level": "low"}'
