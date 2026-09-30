@@ -12,6 +12,7 @@ These labs are designed around the difference between **AI experimentation** and
 | [02 — Zero-Trust MCP Gateway](labs/02-zero-trust-mcp-gateway/README.md) | MCP security, OPA/Rego policy-as-code, prompt injection, least privilege | **Ready** |
 | 03 — Incident Commander | OpenTelemetry, traces, AI-assisted incident diagnosis | Planned |
 | [04 — AI Engineering Golden Path](labs/04-ai-engineering-golden-path/README.md) | Reusable AI platform primitives, capability contracts, evals, observability, governance, and developer self-service | **Ready** |
+| [05 — Production LLM Service: ChangeBrief](labs/05-production-llm-service/README.md) | Real public LLM API product: GitHub PR briefs, cost/latency evidence, abuse controls, CI/CD and production operations | **Designed — not released** |
 
 ## Why this repository exists
 
@@ -20,6 +21,10 @@ The goal is not to collect demos. Each lab should create an engineering artifact
 The working principle is:
 
 > **The agent is not the product. The evaluated, observable, bounded engineering capability is the product.**
+
+Lab 05 adds a second operating principle:
+
+> **Production is an operating state, not a deployment file.**
 
 ## How to use the labs
 
@@ -31,6 +36,7 @@ The working principle is:
 6. Use GitHub Copilot for inline assistance while inspecting or modifying code.
 7. Record your own observations in each lab's `LEARNING-NOTES.md`.
 8. Never commit API keys, credentials, or real secrets.
+9. For production-oriented labs, do not call a project "production" until the stated production evidence exists.
 
 ## Repository structure
 
@@ -42,39 +48,18 @@ ai-engineering-labs/
 ├── .gitignore
 └── labs/
     ├── 01-pr-guardian/
-        ├── README.md
-        ├── PROMPTS.md
-        ├── LEARNING-NOTES.md
-        ├── requirements.txt
-        ├── .env.example
-        ├── src/
-        ├── fixtures/
-        ├── evals/
-        ├── reports/
-        └── tests/
     ├── 02-zero-trust-mcp-gateway/
-        ├── README.md
-        ├── PROMPTS.md
-        ├── LEARNING-NOTES.md
-        ├── THREAT-MODEL.md
-        ├── requirements.txt
-        ├── src/
-        ├── policies/
-        ├── fixtures/
-        ├── tests/
-        └── reports/
-    └── 04-ai-engineering-golden-path/
+    ├── 04-ai-engineering-golden-path/
+    └── 05-production-llm-service/
         ├── README.md
         ├── ARCHITECTURE.md
+        ├── THREAT-MODEL.md
         ├── PROMPTS.md
         ├── LEARNING-NOTES.md
-        ├── requirements.txt
-        ├── schemas/
-        ├── src/
-        ├── templates/
-        ├── examples/
-        ├── tests/
-        └── reports/
+        ├── RUNBOOK.md
+        ├── RELEASE-CHECKLIST.md
+        ├── PRODUCTION-EVIDENCE.md
+        └── .env.example
 ```
 
 ## Evidence discipline
@@ -85,6 +70,12 @@ Learning or implementing something in these labs does **not** rewrite past profe
 - what I built in this lab;
 - what I learned;
 - what I would change before enterprise deployment.
+
+For Lab 05 specifically:
+
+- before public release: **production-oriented learning project**;
+- after the release Definition of Done is evidenced: **self-directed public production product**;
+- never relabel it as enterprise/client production work unless that is independently true.
 
 ## Author
 
