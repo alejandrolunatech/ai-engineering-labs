@@ -1370,17 +1370,277 @@ depend on that guard to stay safe.
 
 ## Template lifecycle
 
+Phase 8 adds `ai-golden-path upgrade --to <version> [--apply] [--diff]`
+(`src/golden_path/upgrade.py`). It is platform lifecycle tooling over
+**already released** templates. No `capability@0.7.0` was created, because
+nothing a new capability should contain changed. Templates 0.1.0–0.6.0 and
+every canonical contract are byte-identical to `08c495c`.
+
 ### Upgrade attempted
 
-_Write here._
+The **real** historical edge `capability@0.1.0 -> capability@0.2.0`, and only
+that edge. There is no graph, no chaining (0.1.0 → 0.6.0 exits 2) and no
+downgrade.
+
+**The real diff**, as rendered for one name:
+- **Changed:** `README.md` (2180 → 5957 bytes) and `capability.yaml`.
+- **Byte-identical:** `schemas/input.schema.json` and
+  `schemas/output.schema.json` (same SHA-256).
+- **Added:** `platform/capability.schema.json` (the canonical v1 contract),
+  `src/{capability,contracts,model_adapter}.py`, `tests/test_capability.py`,
+  `fixtures/sample_input.json`, `requirements.txt` and `pyproject.toml`.
+- **Removed:** nothing.
+- **In `capability.yaml`:** `spec.model.adapter` changes `default` → `fake`,
+  provenance changes `0.1.0` → `0.2.0`, and only comments change otherwise.
+  Every budget and contract value is unchanged.
+
+**Provenance enables reconstruction of BASE.** Rendering is deterministic, and
+released templates and contracts are SHA-pinned. So
+`(metadata.name, metadata.template_version)` is enough to rebuild exactly what
+the project was generated from, and no lockfile is needed.
+- **Evidence:** I ran the actual Phase 2 (`82afeec`) and Phase 3 (`b205384`)
+  scaffold code against the frozen templates. Its output is byte-identical to
+  the refactored `render(name, version)`.
+- **Tests:** the rendered digests for 0.1.0, 0.2.0 and 0.6.0 are now pinned
+  in `test_scaffold.py`.
+- **Consequence:** without trustworthy provenance, an upgrade has nothing to
+  compare against.
+
+**Three trees, not two.** BASE is a fresh render of the recorded source
+version, CURRENT is the working tree, and TARGET is a fresh render of the
+target.
+- **Why two are not enough.** A CURRENT-vs-TARGET diff cannot tell "the team
+  edited this" from "this is just the old template". Both look like "differs
+  from target".
+- **What BASE adds.** With BASE the planner is ownership-aware:
+  - untouched old content → `update`;
+  - a team edit on a path the platform did not change → `preserve`;
+  - both changed → `conflict`.
+- **Scope of the planner.** Only `union(BASE, TARGET)` is ever read. In the
+  tests and the manual run, a mode-000 `.env` survived planning, `--diff` and
+  apply, which would have raised had it been read.
+
+**Clean upgrade (manual, real CLI, `change-explainer`):**
+- **Before:** `template_version: "0.1.0"`, 4 files.
+- **Dry-run:**
+  - `BREAKING`, contract compatible, template breaking;
+  - 10 changes (2 `UPDATE`, 8 `ADD`) and 2 `ALREADY_TARGET` schemas;
+  - `conflicts: 0`, exit 0;
+  - the tree hash was identical before and after.
+- **Apply:** 10 atomic writes. The write trace shows provenance `0.1.0` before
+  and after writes 1–9; only write 10 (`capability.yaml`) flips it to `0.2.0`.
+- **After:**
+  - all 12 managed paths are byte-equal to a fresh 0.2.0 render;
+  - the local snapshot equals the canonical contract, and the manifest
+    validates against it;
+  - the runtime on `fixtures/sample_input.json` exits 0 with
+    `declared_adapter: fake` and `model_requests.used: 1/2`;
+  - the generated pytest passes **32/32**, with `golden_path`
+    import-blocked.
+- **"Verification" here:** 0.2.0 predates `ai-capability verify`, which was
+  not backported. In Phase 8, verification means three things:
+  - the **upgrade preflight**, which checks the source before any render;
+  - **target render validation**: the target must carry the released snapshot
+    and satisfy it;
+  - the **0.2.0-era health checks**: snapshot validation, the runtime
+    fixture, and pytest.
+
+**Dry-run is part of the safety boundary.** Dry-run is the default and writes
+zero bytes. `--apply` performs a fixed order of steps:
+1. preflight;
+2. render BASE and TARGET;
+3. classify the whole union;
+4. build the complete plan;
+5. refuse if the plan has any conflict;
+6. only then, write.
+
+The planner never discovers a conflict mid-write. `--diff` shows capped
+BASE → TARGET diffs (platform renders only), plus size and SHA-256 for added
+files. It never shows working-tree content.
+
+**Apply safety, stated honestly:**
+- **ADD uses exclusive creation** (`O_CREAT | O_EXCL | O_NOFOLLOW`): there is
+  **no silent overwrite, even if the destination appears after planning**.
+  - The first version re-checked "absent" and then wrote with `os.replace`.
+    That left a TOCTOU window in which another process's new file would have
+    been replaced, breaking the core promise.
+  - Now the OS refuses atomically, and the result is `stale_plan`.
+  - A deterministic test creates `src/capability.py` after the re-check,
+    immediately before the ADD. The injected bytes stay exactly unchanged, the
+    five earlier writes roll back, and provenance stays `0.1.0`.
+  - Rollback then reports `rollback incomplete: src`: the apply had created
+    `src/`, which now holds the foreign file, so it is not removed. A created
+    file is journaled only **after** its exclusive creation succeeds, so
+    rollback can never delete another process's file. A mutant that journaled
+    before creating was caught by that test.
+- **UPDATE** re-hashes the path immediately before writing a same-directory
+  temp file and calling `os.replace`, so readers see old or new bytes, never
+  half. This re-check is **best effort**: no cross-process locking is
+  provided, so a writer racing between re-check and replace is not detected.
+- **Stale-plan check:** before each operation the path is re-read and must
+  match its planning-time fingerprint, else `stale_plan`.
+- **Rollback:** any failure rolls back in reverse, from an in-memory journal.
+  - A manual run with an injected `ENOSPC` on the 5th write exited 1 with
+    `apply_failed ... rolled back`.
+  - Paths were identical afterwards, with no temp files or directories left.
+    README.md, already rewritten by write 1, was restored byte-for-byte, and
+    provenance stayed `0.1.0`.
+- **Limits:** this is best-effort rollback. It is **not crash-safe and not a
+  filesystem transaction**.
+- **Recovery:** because `capability.yaml` is written last, a crash can never
+  claim `0.2.0`. Re-planning classifies files that were already written as
+  `already_target` and converges (this is tested).
+
+**Plan determinism:** stdout is byte-identical across `PYTHONHASHSEED` 0, 1, 2
+and random, for plain and `--diff`, clean and conflicted plans. It has no
+timestamps, IDs or absolute paths.
 
 ### Product-team edits preserved?
 
-_Write here._
+Yes: **no product edit was silently overwritten** in any test or manual run.
+
+**Core safety proof (manual, `release-notes`):** the team made three edits.
+- **Output schema:** they added a valid `team_reviewer` property to
+  `schemas/output.schema.json`. The planner preserved it (`PRESERVE`,
+  `product_modified`), because source and target schema bytes are identical,
+  so the edit is theirs.
+- **README:** they appended team notes to `README.md`. That path changed
+  upstream too, so it is a `CONFLICT` (`modified_both`).
+- **Manifest:** they replaced `spec.purpose` in `capability.yaml`, also a
+  `CONFLICT` (`modified_both`).
+- **Result:**
+  - the dry-run printed `status: blocked (manual_resolution_required)` and
+    exited 1;
+  - `--apply` exited 1 with
+    `refusing to apply: conflicts_present: 2 conflict(s); nothing was written`;
+  - the full tree hash was identical before and after both commands, and
+    provenance is still `0.1.0`.
+
+**Other cases (tested):**
+- **Target-path collision:** a team-written `src/capability.py` is a
+  `conflict` (`target_path_collision`) and is never overwritten. The whole
+  apply is refused, including the non-colliding adds.
+- **Deletion:** if the team deleted a file that upstream did not change, it is
+  `preserve` (`product_deleted`) and **not restored**. If upstream did change
+  it, that is a conflict (`product_deleted_upstream_changed`).
+- **Upstream removal:** a file upstream removed is a `delete` only if CURRENT
+  still equals BASE. A modified one is a conflict
+  (`modified_removed_upstream`).
+- **Symlinks:** they are never followed, whether at the path or at an ancestor
+  (`not_regular_file`).
+- **Unknown files:** `.env`, `notes/` and team helpers were never read,
+  hashed, listed or printed, and were byte-identical afterwards.
+
+**Conflict is a valid, safe result.** A blocked upgrade is not a failed safety
+mechanism. It means the platform changed this path **and** the product team
+changed (or occupies) it, so automatic ownership ends there. This Phase 8
+implementation **detects conflicts but deliberately does not resolve them**:
+- no `--keep` or accept flags;
+- no conflict markers or prompts;
+- no YAML merge.
+
+**Why `--keep capability.yaml` was rejected.** Keeping the team's manifest
+while rewriting only `template_version` would produce **false provenance**.
+The file would claim `0.2.0` while still declaring `adapter: default`, which
+the 0.2.0 runtime refuses (exit 3). **`metadata.template_version` must
+describe completed state, not intended state.** So:
+- it stays at the source version through dry-run, refusal and rollback;
+- it changes only when the last write of a clean plan succeeds.
 
 ### Compatibility problems discovered
 
-_Write here._
+**Template compatibility ≠ contract compatibility.** Both values are declared
+by the platform in `UpgradeEdge`, never inferred from a diff, and backed by
+tests.
+- **`contract_compatibility = compatible`:**
+  - both versions are `ai.platform/v1`, with the same pinned canonical schema;
+  - the rendered 0.1.0 manifest validates against 0.2.0's
+    `platform/capability.schema.json`.
+- **`template_compatibility = breaking`:**
+  - put the 0.1.0 manifest into a 0.2.0 project and the runtime exits **3**:
+    `unknown adapter 'default'; this project registers ['fake']`. The same
+    project with its own manifest exits 0.
+  - So a contract-valid manifest is not runnable by the target, and the
+    upgrade needs a change to a **product-owned** field (`spec.model.adapter`
+    is provider configuration).
+  - Inert declarations also become enforced: `max_model_requests` is counted,
+    and a non-empty `authority.tools` is refused.
+  - "Compatible" and "breaking" are therefore different questions: *will the
+    manifest still parse?* versus *will the capability still behave?*
+
+**Preflight rejects incompatible contract state before any write** (exit 3; no
+offending value echoed). It covers:
+- `ai.platform/v2` → `incompatible_contract`, and the value `v2` never
+  appears in output;
+- wrong `kind`;
+- duplicate keys (strict YAML);
+- an unknown or non-string `template_version`;
+- schema violations (reported as location and rule only);
+- invalid `metadata.name`;
+- for sources that have one, a local platform snapshot that differs from the
+  released canonical contract. It is never trusted merely because it exists.
+
+0.1.0 generated no local snapshot, so its preflight uses the pinned canonical
+v1 contract directly. The TARGET render must itself carry the released
+canonical snapshot, and a tampered one is refused (exit 3).
+
+**DX finding (recorded, not solved):** file-level ownership makes a customised
+`capability.yaml` a common conflict.
+- **Why it's common:** the template itself tells teams to replace
+  `spec.purpose` (a STARTER DEFAULT). So a team that followed the instructions
+  will usually find this edge **blocked** until they reconcile the manifest by
+  hand.
+- **The gap:** the platform owns only `api_version`, `kind` and
+  `metadata.template_version`, yet the unit of conflict is the whole file.
+- **What it suggests:** future lifecycle tooling may need a more granular
+  ownership or migration model. Examples are field-level ownership, or
+  explicit per-edge migrations such as "set `spec.model.adapter` only if it is
+  still the template default".
+- **Scope:** Phase 8 deliberately does not build this. For the
+  `template_upgrade_conflicts` DX metric, a customised manifest always yields
+  at least one conflict on this edge.
+
+**Freezing on release (a gap found and closed).**
+- **The gap:** `FROZEN_TEMPLATES` used to pin template sources only once a
+  version stopped being current, so released 0.6.0 had only its file list
+  pinned.
+- **Why it matters now:** Phase 8 reconstructs historical trees from template
+  sources, so a released version must be immutable **immediately** on release.
+- **The fix:**
+  - 0.6.0 is now pinned with the exact source digests from `08c495c` (25
+    files, all identical to the working tree).
+  - The frozen test now uses the scaffold's own source rules, so 0.6.0's
+    `.github/workflows/...` and `.gitignore` are pinned too. The old filter
+    skipped every dot path, and a tampered `.gitignore` is now detected.
+- **Two checks, two different claims:**
+  - `FROZEN_TEMPLATES`: the released template **sources** are unchanged.
+  - `RENDERED_RELEASE_DIGESTS`: the deterministic **generated output** is
+    unchanged.
+- **Regression:** `new current-demo` is byte-identical (31 files) to the
+  output recorded before Phase 8.
+
+**What Phase 8 proves:**
+- a platform-classified upgrade edge;
+- source provenance and contract state are checked before planning;
+- a deterministic, human-readable, ownership-aware plan;
+- dry-run writes nothing;
+- conflicts are detected and block apply entirely;
+- product edits are never silently overwritten;
+- provenance names the target only after a completed apply;
+- the clean historical upgrade produces a healthy 0.2.0 project.
+
+**What it does NOT prove:**
+- that arbitrary future templates can always be merged;
+- semantic correctness of product edits;
+- automatic resolution of conflicting changes;
+- data or database migrations;
+- deployed-runtime compatibility;
+- package dependency compatibility;
+- production rollback;
+- cross-repository migrations;
+- cryptographic provenance (the recorded `template_version` is a claim, not an
+  attestation);
+- upgrades from every historical version to every later one.
 
 ---
 

@@ -80,6 +80,9 @@ PLATFORM_FILES_BY_TEMPLATE_VERSION: dict[str, dict[str, Path]] = {
     },
 }
 PLATFORM_FILES = PLATFORM_FILES_BY_TEMPLATE_VERSION[TEMPLATE_VERSION]
+# Every released version. `new` renders only TEMPLATE_VERSION; historical
+# versions are rendered only to reconstruct upgrade BASE/TARGET trees (Phase 8).
+RELEASED_TEMPLATE_VERSIONS = tuple(PLATFORM_FILES_BY_TEMPLATE_VERSION)
 
 
 class ScaffoldError(Exception):
@@ -96,6 +99,10 @@ class DestinationExistsError(ScaffoldError):
 
 class TemplateContractError(ScaffoldError):
     """The rendered template does not satisfy the capability contract (platform bug)."""
+
+
+class UnknownTemplateVersion(ScaffoldError):
+    """The requested template version was never released. Fails closed."""
 
 
 def load_capability_schema() -> dict:
@@ -128,8 +135,16 @@ def display_title(name: str) -> str:
     return " ".join(part.capitalize() for part in name.split("-"))
 
 
-def template_dir() -> Path:
-    return TEMPLATES_ROOT / TEMPLATE_ID / TEMPLATE_VERSION
+def _released(version: str | None) -> str:
+    version = TEMPLATE_VERSION if version is None else version
+    if version not in PLATFORM_FILES_BY_TEMPLATE_VERSION:
+        raise UnknownTemplateVersion(f"unknown template version for {TEMPLATE_ID}")
+    return version
+
+
+def template_dir(version: str | None = None) -> Path:
+    """Directory of a released template version (default: the current one)."""
+    return TEMPLATES_ROOT / TEMPLATE_ID / _released(version)
 
 
 # Hidden paths a template may intentionally generate. Everything else that
@@ -162,10 +177,16 @@ def template_sources(root: Path | None = None) -> list[Path]:
     return sorted(sources)
 
 
-def render(name: str) -> dict[str, bytes]:
-    """Render the template for `name` in memory. Returns {relative posix path: bytes}."""
+def render(name: str, version: str | None = None) -> dict[str, bytes]:
+    """Render a released template version (default: the current one) for `name`
+    in memory. Returns {relative posix path: bytes}.
+
+    The pipeline is the one every version was released with, so rendering a
+    historical version reproduces what that release generated (pinned in tests).
+    """
     validate_name(name)
-    root = template_dir()
+    version = _released(version)
+    root = template_dir(version)
     env = Environment(
         loader=FileSystemLoader(root),
         undefined=StrictUndefined,
@@ -176,11 +197,11 @@ def render(name: str) -> dict[str, bytes]:
         "name": name,
         "title": display_title(name),
         "template_id": TEMPLATE_ID,
-        "template_version": TEMPLATE_VERSION,
+        "template_version": version,
     }
 
     files: dict[str, bytes] = {}
-    for source in template_sources():
+    for source in template_sources(root):
         relative = source.relative_to(root).as_posix()
         if relative.endswith(RENDER_SUFFIX):
             output = relative.removesuffix(RENDER_SUFFIX)
@@ -188,7 +209,7 @@ def render(name: str) -> dict[str, bytes]:
         else:
             files[relative] = source.read_bytes()
 
-    for output, canonical in PLATFORM_FILES.items():
+    for output, canonical in PLATFORM_FILES_BY_TEMPLATE_VERSION[version].items():
         if output in files:
             raise TemplateContractError(f"template must not provide platform-managed file {output}")
         files[output] = canonical.read_bytes()

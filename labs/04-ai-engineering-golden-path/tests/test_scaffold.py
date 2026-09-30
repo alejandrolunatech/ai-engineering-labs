@@ -20,6 +20,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 from jsonschema import Draft202012Validator
 from typer.testing import CliRunner
 
@@ -74,9 +75,41 @@ EXPECTED_TREE = [
 
 # Released templates are immutable. These digests pin each released version
 # exactly as committed (0.1.0 in Phase 2, 0.2.0 in Phase 3, 0.3.0 in Phase 4,
-# 0.4.0 in Phase 5, 0.5.0 in Phase 6); any change to
-# generated output must become a new template version instead.
+# 0.4.0 in Phase 5, 0.5.0 in Phase 6, 0.6.0 in Phase 7 at 08c495c); any change
+# to generated output must become a new template version instead.
+#
+# Since Phase 8, upgrades reconstruct historical BASE/TARGET trees from these
+# sources, so a version is frozen IMMEDIATELY on release, including the current
+# one. The source pin is complemented by RENDERED_RELEASE_DIGESTS (below),
+# which pins deterministic generated output.
 FROZEN_TEMPLATES = {
+    "0.6.0": {
+        ".github/workflows/ai-capability-verify.yml": "afcbb3d6af6645adab9575ff7cde6c6fed50f167b3747c2ce21f7c5e50e235d2",
+        ".gitignore": "1f9503f7d0a35484c47142f9b5e9e5255e14cf66aecd6429b9729d6a3d1cdb47",
+        "README.md.j2": "5d03eb9316c390c4594f2ccc44e0beef8dd38bdf9172cfd72be2a1d4d7bbb2cf",
+        "capability.yaml.j2": "c1d192cfc1b4fe2fa7ed0b4fee7446ddfd3fb1a0d114601a44b4cd72b6af4f98",
+        "evals/cases.yaml": "5726963364a07b5eddcebecec9b7c4ae914a429256632f1b4da60cd643347187",
+        "evals/evaluator.py": "b13d6ea402660a533baa522e838d17028d639fd66183c28539cbdbec502381af",
+        "fixtures/sample_input.json": "4c20a26777581c984e430aaf892c63c67c94ab686beba13c03a2d51105e0c6f3",
+        "pricing.yaml": "8cf0d2d8b4c427bc4744cb87d84d89ad9889f239913a122fe8fa2c34eb90305e",
+        "pyproject.toml.j2": "9ff80424ce9f6612bf8de7c15f146fb243bcc7d36751a79e6ae5b670eba80a2c",
+        "requirements.txt": "1b4c73c044583e6c664700c2737df695b17319ab05b12dbe07fe152cbf11147c",
+        "schemas/input.schema.json": "30a49ee496efc3a7f55cf50bc74de7d16b9852d8c80c58b03d02b5f98e2b716d",
+        "schemas/output.schema.json": "64b84ca89036e3c2af93c3184cfac927e468caedd314ae7463e9b5dcc785f029",
+        "src/capability.py": "6796a0f3163f7585ae8ee9121342b06a122b0f38003d53a47f43875e1a3df6b9",
+        "src/contracts.py": "0d0f30e3f84a7540c63189c4f604a66dc8b7022f7343b94916cb1d3d0f20b365",
+        "src/cost.py": "1fd08246145ea28cca7ad68915f2969f98d52c4504d8c05b12e288c27d38b63d",
+        "src/model_adapter.py": "a924419c23bcb2d57c3126ae52acd8d9e65bebee20028f0c9e38391c6a100e6b",
+        "src/policy.py": "9c607df76763a5d29f26b71c62bdeecff342b753143dae0a0889753b041d3b8a",
+        "src/telemetry.py": "8318c455824361db27f3b15625b62e0dd533fcf6e01f8e3edcc5a03a8a61c719",
+        "src/tools.py": "f6be6e0f5e55dba0ad62dd388c93728443f543641eeca9162738eef3b45aad1a",
+        "tests/test_capability.py": "21d42a8f7e358ad80cf214155c0cd994beff44fea5257353c9ceef1b686b1f72",
+        "tests/test_evals.py": "851bf82ab2b631d1245a13ad06352eaf40676c52bb7136a286aa1a8a1c778b5e",
+        "tests/test_telemetry.py": "646fca7b1697c371e82105bede375dd1548725c478d46e1da80a1898d4def9e0",
+        "tests/test_tools.py": "c8509d1cb62beb05fe82b08d04d28c8070720d54fda5532e41ec73a475e9c746",
+        "tests/test_verify.py": "1c38750107dfe0ac23e2eb38bbcfac04ccfdcde7637b24a1fd4520f204019c06",
+        "verifier/ai_capability.py": "adab73a438ca906cddf4cef0c8164d7115d265ff69daaa0256e52699f160e09a",
+    },
     "0.1.0": {
         "README.md.j2": "477a1d56242896f3a9c92263cf035c8a762bfc42c3236d2e9cf640e1f0a066b0",
         "capability.yaml.j2": "074444f57bfca53569e9643a988996947414fa6d4f4289c49ca634647631a97c",
@@ -285,13 +318,22 @@ def test_template_directory_matches_declared_version():
 
 @pytest.mark.parametrize("version", sorted(FROZEN_TEMPLATES))
 def test_released_template_is_frozen(version):
-    root = scaffold.TEMPLATES_ROOT / scaffold.TEMPLATE_ID / version
+    # The scaffold's own source rules: OS/bytecode litter is ignored, allowed dot
+    # paths (0.6.0's .github/ and .gitignore) are pinned, and any other hidden
+    # path fails loudly rather than escaping the pin.
+    root = scaffold.template_dir(version)
     committed = {
-        path: digest
-        for path, digest in tree_digest(root).items()
-        if not any(part.startswith(".") or part == "__pycache__" for part in path.split("/"))
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in scaffold.template_sources(root)
     }
     assert committed == FROZEN_TEMPLATES[version]
+
+
+def test_every_released_template_is_frozen_including_the_current_one():
+    assert tuple(sorted(FROZEN_TEMPLATES)) == scaffold.RELEASED_TEMPLATE_VERSIONS
+    assert scaffold.TEMPLATE_VERSION in FROZEN_TEMPLATES
+    assert ".github/workflows/ai-capability-verify.yml" in FROZEN_TEMPLATES["0.6.0"]
+    assert ".gitignore" in FROZEN_TEMPLATES["0.6.0"]
 
 
 def test_new_creates_exact_tree(tmp_path, monkeypatch):
@@ -605,7 +647,58 @@ def test_unexpected_hidden_paths_fail_loudly(tmp_path, monkeypatch, hidden):
 
 def test_released_templates_contain_no_dot_paths():
     # The allowlist change cannot alter what 0.1.0-0.5.0 generate: they contain no dot paths.
-    for version in FROZEN_TEMPLATES:
+    # (0.6.0, released with the allowlist, generates .github/ and .gitignore on purpose.)
+    for version in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"):
         root = scaffold.TEMPLATES_ROOT / scaffold.TEMPLATE_ID / version
         assert all(not part.startswith(".") for p in root.rglob("*") for part in p.relative_to(root).parts
                    if part not in (".DS_Store",))
+
+
+# --------------------------------------------------------------------------
+# Phase 8: rendering a specific released version
+# --------------------------------------------------------------------------
+
+# Tree digests of render("current-demo", version), recorded BEFORE the Phase 8
+# refactor: 0.6.0 from HEAD's scaffold, 0.1.0 and 0.2.0 by running the Phase 2
+# (82afeec) and Phase 3 (b205384) scaffold code against the frozen templates.
+RENDERED_RELEASE_DIGESTS = {
+    "0.1.0": "6bf93660d34c81c501b2881878559604e2eb720df737701522b8066067cbf24f",
+    "0.2.0": "32145e05462030868d77f647e7de7c9a6e2e585c2b5ddca5ad6eb7ae40d476a4",
+    "0.6.0": "9ef790189d433f0af840c7424cb8ec486af138b0ce8c3ae1e63296cbed1175d4",
+}
+
+
+def rendered_tree_digest(files: dict[str, bytes]) -> str:
+    digest = hashlib.sha256()
+    for path, content in sorted(files.items()):
+        digest.update(path.encode() + b"\0" + hashlib.sha256(content).hexdigest().encode() + b"\n")
+    return digest.hexdigest()
+
+
+@pytest.mark.parametrize("version", sorted(RENDERED_RELEASE_DIGESTS))
+def test_rendering_a_released_version_reproduces_what_it_released(version):
+    assert rendered_tree_digest(scaffold.render("current-demo", version)) == RENDERED_RELEASE_DIGESTS[version]
+
+
+def test_new_current_demo_is_byte_identical_to_pre_phase8_output(tmp_path, monkeypatch):
+    result = run_new(tmp_path, "current-demo", monkeypatch)
+    assert result.exit_code == 0, result.output
+    files = {path: (tmp_path / "current-demo" / path).read_bytes() for path in tree_digest(tmp_path / "current-demo")}
+    assert rendered_tree_digest(files) == RENDERED_RELEASE_DIGESTS["0.6.0"]
+    assert scaffold.render("current-demo") == scaffold.render("current-demo", scaffold.TEMPLATE_VERSION)
+
+
+def test_every_released_version_renders_and_records_its_own_provenance():
+    assert scaffold.RELEASED_TEMPLATE_VERSIONS == tuple(sorted(FROZEN_TEMPLATES))
+    for version in scaffold.RELEASED_TEMPLATE_VERSIONS:
+        manifest = yaml.safe_load(scaffold.render("current-demo", version)["capability.yaml"])
+        assert manifest["metadata"]["template_version"] == version
+        assert scaffold.template_dir(version).name == version
+
+
+@pytest.mark.parametrize("version", ["0.7.0", "0.1", "", "../0.1.0", "latest"])
+def test_unknown_template_versions_fail_closed(version):
+    with pytest.raises(scaffold.UnknownTemplateVersion):
+        scaffold.render("current-demo", version)
+    with pytest.raises(scaffold.UnknownTemplateVersion):
+        scaffold.template_dir(version)
