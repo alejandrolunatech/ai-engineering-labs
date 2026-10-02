@@ -46,8 +46,26 @@ Rule `[BOUNDARY]`: a `[MODEL]` or `[TARGET]` statement can never be cited as if 
 - `[BOUNDARY]` Exactly one input: a URL with the exact shape `https://github.com/<owner>/<repo>/pull/<number>`.
 - `[BOUNDARY]` Only **public** GitHub repositories are supported. A PR the anonymous GitHub API cannot read is reported as not found/unavailable, never retried with credentials.
 - `[BOUNDARY]` The server parses the URL into `owner`, `repo`, and `number`, validates each part, and **builds the `api.github.com` endpoints itself**. A user-supplied URL is never fetched.
-- `[BOUNDARY]` Rejected before any external call: non-HTTPS schemes, hosts other than exactly `github.com` (including lookalikes), explicit ports, embedded credentials, malformed paths, non-numeric or out-of-range PR numbers. (Exact parser rules and tests: Phase 1.)
-- `[BOUNDARY]` Query strings, fragments, and trailing path segments (e.g. `/files`) are either rejected or explicitly normalized by the parser. Which of the two is a Phase 1 decision, and it must be tested either way.
+- `[BOUNDARY]` Rejected before any external call: non-HTTPS schemes, hosts other than exactly `github.com` (including lookalikes), explicit ports, embedded credentials, malformed paths, non-numeric or out-of-range PR numbers.
+
+### 2a. Exact parser rules (Phase 1, implemented in `app/lib/pr-url.ts`, tested in `app/tests/pr-url.test.ts`)
+
+- `[BOUNDARY]` The input is trimmed, then must be 1–2,048 characters of printable ASCII (`0x21–0x7E`) with no backslash. Inner whitespace, control characters, non-ASCII and full-width characters are rejected.
+- `[BOUNDARY]` The raw trimmed string is matched against **one anchored pattern before any URL normalization**. `new URL()` is not used for the decision, because WHATWG parsing rewrites backslashes, dot-segments, default ports, IDNA/full-width hosts and trailing dots.
+- `[BOUNDARY]` Scheme: literal lowercase `https://`.
+- `[BOUNDARY]` Host: exactly `github.com`. Letter case is ignored (hostnames are case-insensitive) and the result is normalized to lowercase. Rejected: `www.github.com` and every other subdomain, explicit ports (including `:443` and an empty `:`), credentials or any `@`, trailing-dot hosts, IP literals, `localhost`.
+- `[BOUNDARY]` Owner: 1–39 letters/digits/hyphens, no leading or trailing hyphen. Case kept.
+- `[BOUNDARY]` Repo: 1–100 letters/digits/`.`/`_`/`-`, and not `.` or `..`. Case kept.
+- `[BOUNDARY]` PR number: positive integer, no leading zeros, at most 2,147,483,647.
+- `[BOUNDARY]` **Accepted and discarded:** a trailing slash, a query string, a fragment, and one PR tab segment out of `/files`, `/commits`, `/checks` (optionally followed by `/`). **Any other suffix is rejected**, including dot-segments (`/..`), percent-encoded segments, `/issues/`, and doubled slashes.
+- `[BOUNDARY]` The server builds `https://api.github.com/repos/{owner}/{repo}/pulls/{number}` from the validated parts, each passed through `encodeURIComponent`. In Phase 1 this URL is returned as `wouldFetch` and **not fetched**.
+
+### 2b. Request boundary (Phase 1, `app/app/api/analyze/route.ts`)
+
+- `[BOUNDARY]` `POST` only. Body must be `Content-Type: application/json` (parameters such as `charset` allowed) and the JSON object `{ "url": string }` with no other fields.
+- `[BOUNDARY]` The body is read with a hard 2,048-byte cap by counting streamed bytes. `Content-Length` can only cause an earlier rejection; it is never trusted to allow a body. Invalid UTF-8 is rejected.
+- `[BOUNDARY]` Error mapping, all using ARCHITECTURE.md categories with fixed messages that never echo input: wrong method → 405 `invalid_pr_url` (+ `Allow: POST`); wrong content type → 415 `invalid_pr_url`; body over 2 KB → 413 `request_too_large`; malformed JSON, wrong shape, extra fields or a rejected URL → 400 `invalid_pr_url`; unexpected exception → 500 `internal_error`.
+- `[BOUNDARY]` Phase 1 success response: `200 { status: "parsed", pr: { owner, repo, number }, wouldFetch }`. Phase 2 replaces `wouldFetch` with real ingestion.
 
 ---
 
