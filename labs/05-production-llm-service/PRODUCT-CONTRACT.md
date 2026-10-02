@@ -44,7 +44,7 @@ Rule `[BOUNDARY]`: a `[MODEL]` or `[TARGET]` statement can never be cited as if 
 ## 2. Supported input
 
 - `[BOUNDARY]` Exactly one input: a URL with the exact shape `https://github.com/<owner>/<repo>/pull/<number>`.
-- `[BOUNDARY]` Only **public** GitHub repositories are supported. A PR the anonymous GitHub API cannot read is reported as not found/unavailable, never retried with credentials.
+- `[BOUNDARY]` Only **public** GitHub repositories are supported: public data only, via an optional read-only token with no repository permissions (a fine-grained token limited to public repositories, server-side only). A PR that request cannot read is reported as not found/unavailable, never retried with other credentials.
 - `[BOUNDARY]` The server parses the URL into `owner`, `repo`, and `number`, validates each part, and **builds the `api.github.com` endpoints itself**. A user-supplied URL is never fetched.
 - `[BOUNDARY]` Rejected before any external call: non-HTTPS schemes, hosts other than exactly `github.com` (including lookalikes), explicit ports, embedded credentials, malformed paths, non-numeric or out-of-range PR numbers.
 
@@ -65,7 +65,16 @@ Rule `[BOUNDARY]`: a `[MODEL]` or `[TARGET]` statement can never be cited as if 
 - `[BOUNDARY]` `POST` only. Body must be `Content-Type: application/json` (parameters such as `charset` allowed) and the JSON object `{ "url": string }` with no other fields.
 - `[BOUNDARY]` The body is read with a hard 2,048-byte cap by counting streamed bytes. `Content-Length` can only cause an earlier rejection; it is never trusted to allow a body. Invalid UTF-8 is rejected.
 - `[BOUNDARY]` Error mapping, all using ARCHITECTURE.md categories with fixed messages that never echo input: wrong method → 405 `invalid_pr_url` (+ `Allow: POST`); wrong content type → 415 `invalid_pr_url`; body over 2 KB → 413 `request_too_large`; malformed JSON, wrong shape, extra fields or a rejected URL → 400 `invalid_pr_url`; unexpected exception → 500 `internal_error`.
-- `[BOUNDARY]` Phase 1 success response: `200 { status: "parsed", pr: { owner, repo, number }, wouldFetch }`. Phase 2 replaces `wouldFetch` with real ingestion.
+- `[BOUNDARY]` Phase 1 success response was `200 { status: "parsed", pr, wouldFetch }`. Phase 2 replaces it with `200 { status: "normalized", evidence: NormalizedPullRequest }` (development output; Phase 3 replaces it with the ChangeBrief). See §2c.
+
+### 2c. GitHub ingestion (Phase 2, `app/lib/github/*`, `app/lib/normalize/evidence.ts`)
+
+- `[BOUNDARY]` Exactly two endpoints, built from the parsed `owner`/`repo`/`number` with `encodeURIComponent`: `GET /repos/{o}/{r}/pulls/{n}` and `GET /repos/{o}/{r}/pulls/{n}/files?per_page=50&page=1`. No further pages, no raw-file fetches, no clone.
+- `[BOUNDARY]` `lib/github/client.ts` is the only module that calls `fetch` (source-guard test). It refuses any URL not starting with `https://api.github.com/`, makes at most 3 requests per analysis, follows at most one 301/302/307/308 and only to `https://api.github.com/`, times out each request after 10 s, and caps each response at 2 MB by counting streamed bytes.
+- `[BOUNDARY]` Headers: `Accept: application/vnd.github+json`, `User-Agent: ChangeBrief/0.1`, `X-GitHub-Api-Version: 2026-03-10`, and `Authorization: Bearer …` only when `GITHUB_TOKEN` is set. Health reports `githubAuth: "token" | "anonymous"`, never the token.
+- `[BOUNDARY]` GitHub JSON is validated with zod and unknown fields are dropped. `NormalizedPullRequest` holds no author emails, avatars, user IDs or GitHub URLs.
+- `[BOUNDARY]` Error mapping (fixed messages, no GitHub error text): GitHub 404 → 404 `pr_not_found`; 401/403/429, timeout, over-size, bad redirect, 5xx, malformed JSON or unexpected shape → 503 `pr_not_found` ("not found or is unavailable"). The specific reason is kept as a server-side code for later telemetry and is not logged yet.
+- `[BOUNDARY]` Normalization order: first 50 files in API order → each patch ≤ 4,000 chars → body ≤ 4,000 chars → body then patches in file order until 60,000 total chars; later files keep metadata with `patch: null`. Cuts end at a line break where possible. Characters are JavaScript string length (UTF-16 code units). Every cut adds a server-written limitation that names files by position (`File #n`), never by filename. Coverage reports `files_total`, `files_considered`, `chars_available`, `chars_included`.
 
 ---
 
@@ -249,6 +258,6 @@ Each item below is **unknown** today. It may be filled in only with recorded evi
 
 These are known tensions Phase 0 does not resolve. They are written down so they are not lost.
 
-- `[BOUNDARY]` THREAT-MODEL.md §5 says to *reject* beyond a hard upper boundary, while this contract *truncates* evidence over budget. With a 3-request GitHub cap the fetched data is bounded either way. Phase 2 decides whether an extreme PR (for example one whose file count makes a 50-file sample misleading) should be rejected rather than truncated.
-- `[BOUNDARY]` Request budget arithmetic: PR metadata (1) + changed files (1 page at 50 files) = 2 requests, which leaves 1 spare. Phase 2 confirms against the real GitHub API how many requests are actually needed and what the spare one is for, if anything.
+- **Decided in Phase 2** `[BOUNDARY]`: large PRs are **truncated and reported, never hard-rejected**. THREAT-MODEL.md §5's "hard upper boundary" is the fetch itself: at most 3 requests, one files page of ≤ 50 entries, 2 MB per response, so an extreme PR can never cost more than that. Instead of rejecting, the evidence carries `truncated=true`, limitations, and `coverage` (`files_total` vs `files_considered`, `chars_available` vs `chars_included`) so the model and the user can see how partial the sample is. Revisit only if evals (Phase 4) show briefs on heavily truncated PRs are misleading.
+- **Decided in Phase 2** `[BOUNDARY]`: request budget. A normal analysis uses 2 requests. The third is for at most one redirect (a renamed repository redirects to `api.github.com/repositories/{id}/...`); the files URL is then built from where the PR was actually served, so a rename costs 3 requests, not 4. Whether real renamed-repo responses behave this way is recorded in LEARNING-NOTES Phase 2 after the manual exercise.
 - `[TARGET]` How to measure the "under two minutes / correctly decide" usefulness target (§1). Candidate approaches belong in Phase 4 (eval rubric) or Phase 10 (real users). None is chosen yet.

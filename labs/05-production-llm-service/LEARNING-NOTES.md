@@ -72,11 +72,44 @@ What this does not prove:
 
 ## Phase 2 — GitHub ingestion
 
+Built: a read-only GitHub adapter (`app/lib/github/`), a pure normalizer (`app/lib/normalize/evidence.ts`), the `NormalizedPullRequest` schema, and `POST /api/analyze` returning `200 { status: "normalized", evidence }` as development output until Phase 3. Optional `GITHUB_TOKEN`; health reports only `githubAuth: "token" | "anonymous"`. Pinned `X-GitHub-Api-Version: 2026-03-10` (latest in GitHub's REST docs on 2026-10-02; `2022-11-28` is still the default). Manual exercise: `npm run inspect-pr -- <PR URL> [--show-evidence]`. Rules are in PRODUCT-CONTRACT.md §2c.
+
 What real GitHub limits did I encounter?
+
+- Expected by design, not observed yet: 2 requests per normal analysis, 3 with one redirect; anonymous requests share a small per-IP hourly quota, a token raises it.
+- Observed GitHub behavior (fill in after `npm run inspect-pr` against real PRs):
+  - PR used / size: _TBD_
+  - Requests made and `x-ratelimit-remaining` before/after, anonymous: _TBD_
+  - Same with token: _TBD_
+  - Did a large PR's files list stop at 50 and did `changed_files` exceed it? _TBD_
+  - Which files came back without a `patch` (binary, large diff)? _TBD_
+  - Largest single patch seen vs the 4,000-char cap: _TBD_
+  - Renamed-repo redirect (status code and `Location` shape), if tried: _TBD_
+  - GitHub latency per request (wall time from the script): _TBD_
+  - Anything that surprised me: _TBD_
 
 What evidence is lost through truncation?
 
+- Files after the 50th (only counted in `coverage.files_total`). The model will not know what is in them.
+- The tail of any patch over 4,000 chars, and of a body over 4,000 chars. Cuts end at a line break, so the last partial line is dropped too.
+- Once 60,000 chars are used, patches of later files. Their name, status and +/- counts are kept, so "which files changed" survives even when "how" does not.
+- Patches GitHub itself does not send (binary files, very large diffs). This is reported as a limitation but is not counted as our truncation (`truncated` stays false for it), because the budget did not cause it.
+- Decision: truncate and report coverage, never hard-reject (contract §10). The fetch is bounded by construction, so an extreme PR cannot cost more; the risk moves to quality, a sample of 50 out of 3,000 files can mislead. That becomes a Phase 4 eval case, not a Phase 2 rejection rule.
+- Determinism: the same GitHub JSON gives the same envelope, byte for byte (tested). The same PR URL does not always give the same JSON: the PR itself can change between requests.
+
 How did I prevent arbitrary URL fetching?
+
+- The user URL is never fetched. Only two URLs are built, from the three validated parts with `encodeURIComponent`.
+- `lib/github/client.ts` is the only module that calls `fetch` (source-guard test; the browser form's same-origin `fetch("/api/analyze")` is the one listed exception). The client refuses anything not starting with `https://api.github.com/` before calling fetch, and that refusal is tested with lookalikes such as `api.github.com.evil.example` and `api.github.com@evil.example`.
+- `redirect: "manual"`: one redirect at most, only to `https://api.github.com/`, counted in the 3-request ceiling. Relative, other-host, `http:` and second redirects are refused. The files URL after a redirect must match one of two exact shapes (`/repos/{o}/{r}/pulls/{n}` or `/repositories/{id}/pulls/{n}`).
+- Bounded work: 10 s per request (the timeout also covers reading the body), 2 MB per response counted on the stream, 3 requests per analysis. GitHub error bodies are never read, and the client gets fixed messages only.
+- Untrusted content: titles, bodies, filenames and patches with "ignore all previous instructions" and `<script>` are carried unchanged as JSON data. Limitation strings are server-written and name files by position (`File #n`) so PR text never lands in trusted text. The inspect script escapes control characters before printing, so a filename cannot inject terminal escape codes.
+
+What this does not prove:
+
+- Nothing about real GitHub responses. All tests use synthetic fixtures hand-written in GitHub's documented shape (not recordings) and a mocked `fetch`. Real behavior goes in the TBD lines above.
+- Whether 50 / 4,000 / 60,000 are the right budgets. Calibration needs real PRs and later the model's token counts (Phase 5).
+- Rate-limit pressure in practice, GitHub latency, or anything about production.
 
 ## Phase 3 — Real LLM integration
 

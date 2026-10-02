@@ -16,6 +16,19 @@ function sourceFiles(dir: string): string[] {
 }
 
 const appFiles = [...sourceFiles(join(ROOT, "app")), ...sourceFiles(join(ROOT, "lib"))];
+// Everything that ships or runs outside tests (scripts/ includes .mjs).
+const shippedFiles = [
+  ...appFiles,
+  ...readdirSync(join(ROOT, "scripts"))
+    .filter((n) => /\.(ts|mjs)$/.test(n))
+    .map((n) => join(ROOT, "scripts", n)),
+];
+
+const NETWORK_CALL = /\bfetch\s*\(|\bhttps?\.request\b|\bhttps?\.get\b|XMLHttpRequest|\bnet\.connect\b|WebSocket/;
+const GITHUB_CLIENT = join("lib", "github", "client.ts");
+// The browser form posts to this app's own API route. It is the only other
+// fetch call, and its target is a fixed same-origin path.
+const BROWSER_FORM = join("app", "analyze-form.tsx");
 
 describe("source guards", () => {
   it("never uses dangerouslySetInnerHTML", () => {
@@ -23,14 +36,28 @@ describe("source guards", () => {
     expect(offenders.map((f) => relative(ROOT, f))).toEqual([]);
   });
 
-  it("has no network call in server code (lib/ and app/api/)", () => {
-    const serverFiles = appFiles.filter((f) => {
-      const rel = relative(ROOT, f);
-      return rel.startsWith("lib") || rel.startsWith(join("app", "api"));
-    });
-    expect(serverFiles.length).toBeGreaterThan(0);
-    const offenders = serverFiles.filter((f) => /\bfetch\s*\(|\bhttps?\.request\b|XMLHttpRequest/.test(readFileSync(f, "utf8")));
+  it("calls fetch only from lib/github/client.ts", () => {
+    expect(shippedFiles.length).toBeGreaterThan(0);
+    const callers = shippedFiles.filter((f) => NETWORK_CALL.test(readFileSync(f, "utf8")));
+    expect(callers.map((f) => relative(ROOT, f)).sort()).toEqual([BROWSER_FORM, GITHUB_CLIENT].sort());
+    const formCalls = readFileSync(join(ROOT, BROWSER_FORM), "utf8").match(/\bfetch\s*\([^,)]*/g);
+    expect(formCalls).toEqual(['fetch("/api/analyze"']);
+  });
+
+  it("reads GITHUB_TOKEN only in the client (value) and config (presence)", () => {
+    const readers = shippedFiles.filter((f) => /GITHUB_TOKEN/.test(readFileSync(f, "utf8")));
+    expect(readers.map((f) => relative(ROOT, f)).sort()).toEqual([join("lib", "config.ts"), GITHUB_CLIENT].sort());
+  });
+
+  it("uses no NEXT_PUBLIC_ variables", () => {
+    const offenders = shippedFiles.filter((f) => readFileSync(f, "utf8").includes("NEXT_PUBLIC_"));
     expect(offenders.map((f) => relative(ROOT, f))).toEqual([]);
+  });
+
+  it("the GitHub client and ingestion modules are server-only", () => {
+    for (const rel of [GITHUB_CLIENT, join("lib", "github", "ingest.ts")]) {
+      expect(readFileSync(join(ROOT, rel), "utf8")).toMatch(/^import "server-only";/m);
+    }
   });
 
   it("config module is server-only", () => {

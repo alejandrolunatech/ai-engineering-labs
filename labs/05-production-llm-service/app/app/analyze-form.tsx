@@ -1,15 +1,14 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import type { NormalizedResponse } from "@/lib/schemas/normalized-pr";
 
 // Everything shown here is rendered as React text nodes. No server or PR
 // content is ever injected as HTML.
-
-type ParsedResult = {
-  status: "parsed";
-  pr: { owner: string; repo: string; number: number };
-  wouldFetch: string;
-};
+//
+// Phase 2 development view: shows the normalized evidence envelope (metadata,
+// coverage, limitations). Patch and body text are not displayed. Phase 3
+// replaces this with the ChangeBrief.
 
 type ErrorResult = {
   status: "error";
@@ -19,7 +18,7 @@ type ErrorResult = {
 type ViewState =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "parsed"; result: ParsedResult }
+  | { kind: "normalized"; result: NormalizedResponse }
   | { kind: "error"; category: string; message: string };
 
 export function AnalyzeForm() {
@@ -35,9 +34,9 @@ export function AnalyzeForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-      const data = (await res.json()) as ParsedResult | ErrorResult;
-      if (data.status === "parsed") {
-        setView({ kind: "parsed", result: data });
+      const data = (await res.json()) as NormalizedResponse | ErrorResult;
+      if (data.status === "normalized") {
+        setView({ kind: "normalized", result: data });
       } else {
         setView({ kind: "error", category: data.error.category, message: data.error.message });
       }
@@ -71,29 +70,64 @@ export function AnalyzeForm() {
           disabled={view.kind === "loading"}
           className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
         >
-          {view.kind === "loading" ? "Checking…" : "Check URL"}
+          {view.kind === "loading" ? "Fetching…" : "Fetch PR"}
         </button>
       </form>
 
       <div aria-live="polite">
-        {view.kind === "parsed" && (
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-zinc-500">Owner</dt>
-            <dd className="font-mono">{view.result.pr.owner}</dd>
-            <dt className="text-zinc-500">Repository</dt>
-            <dd className="font-mono">{view.result.pr.repo}</dd>
-            <dt className="text-zinc-500">Pull request</dt>
-            <dd className="font-mono">#{view.result.pr.number}</dd>
-            <dt className="text-zinc-500">Would fetch</dt>
-            <dd className="break-all font-mono">{view.result.wouldFetch}</dd>
-          </dl>
-        )}
+        {view.kind === "normalized" && <EvidenceView result={view.result} />}
         {view.kind === "error" && (
           <p role="alert" className="text-sm text-red-700 dark:text-red-400">
             {view.message}
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function EvidenceView({ result }: { result: NormalizedResponse }) {
+  const e = result.evidence;
+  return (
+    <div className="flex flex-col gap-4 text-sm">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+        <dt className="text-zinc-500">Pull request</dt>
+        <dd className="font-mono">
+          {e.pr.owner}/{e.pr.repo}#{e.pr.number}
+        </dd>
+        <dt className="text-zinc-500">Title</dt>
+        <dd className="break-words">{e.title}</dd>
+        <dt className="text-zinc-500">State</dt>
+        <dd>
+          {e.merged ? "merged" : e.state}
+          {e.draft ? " (draft)" : ""}
+        </dd>
+        <dt className="text-zinc-500">Files</dt>
+        <dd>
+          {e.coverage.files_considered} of {e.coverage.files_total} considered
+        </dd>
+        <dt className="text-zinc-500">Evidence</dt>
+        <dd>
+          {e.coverage.chars_included} of {e.coverage.chars_available} characters included
+        </dd>
+        <dt className="text-zinc-500">Truncated</dt>
+        <dd>{e.truncated ? "yes" : "no"}</dd>
+      </dl>
+      {e.limitations.length > 0 && (
+        <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-400">
+          {e.limitations.map((text, i) => (
+            <li key={i}>{text}</li>
+          ))}
+        </ul>
+      )}
+      <ol className="list-decimal pl-5 font-mono text-xs">
+        {e.files.map((file, i) => (
+          <li key={i} className="break-all">
+            {file.filename} — {file.status}, {file.patch === null ? "no patch" : `${file.patch.length} chars`}
+            {file.patch_truncated ? " (truncated)" : ""}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

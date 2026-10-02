@@ -1,13 +1,17 @@
 import { getConfig } from "@/lib/config";
 import { errorResponse } from "@/lib/http/errors";
 import { readBodyWithLimit } from "@/lib/http/read-body";
-import { buildPullApiUrl, parsePrUrl } from "@/lib/pr-url";
-import { AnalyzeRequestSchema, type ParsedResponse } from "@/lib/schemas/analyze";
+import { ingestPullRequest } from "@/lib/github/ingest";
+import { parsePrUrl } from "@/lib/pr-url";
+import { AnalyzeRequestSchema } from "@/lib/schemas/analyze";
+import type { NormalizedResponse } from "@/lib/schemas/normalized-pr";
 
-// POST /api/analyze — Phase 1: validate and parse only. No GitHub call, no LLM call.
+// POST /api/analyze — Phase 2: validate, parse, then fetch and normalize the
+// public PR from GitHub. No LLM call.
 //
 // Check order (each step is deterministic and runs before any later one):
-//   method -> content type -> capped body read -> JSON -> request shape -> PR URL.
+//   method -> content type -> capped body read -> JSON -> request shape -> PR URL
+//   -> GitHub ingestion (the first and only external call).
 
 function isJsonContentType(header: string | null): boolean {
   if (header === null) return false;
@@ -51,12 +55,19 @@ export async function POST(request: Request): Promise<Response> {
       return errorResponse("invalid_pr_url", 400);
     }
 
-    const response: ParsedResponse = {
-      status: "parsed",
-      pr: parsed.pr,
-      wouldFetch: buildPullApiUrl(parsed.pr),
-    };
-    return Response.json(response, { status: 200 });
+    const ingest = await ingestPullRequest(parsed.pr);
+    if (!ingest.ok) {
+      // ingest.reason is a server-side code kept for later telemetry. It is not
+      // logged yet and never sent: no GitHub error text reaches the client.
+      return ingest.kind === "not_found"
+        ? errorResponse("pr_not_found", 404)
+        : errorResponse("pr_not_found", 503);
+    }
+
+    // DEVELOPMENT OUTPUT, replaced in Phase 3: the browser gets the normalized
+    // evidence so it can be inspected. Phase 3 sends it to the model instead.
+    const response: NormalizedResponse = { status: "normalized", evidence: ingest.evidence };
+    return Response.json(response, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch {
     // Never echo the exception: it could contain request content.
     return errorResponse("internal_error", 500);
