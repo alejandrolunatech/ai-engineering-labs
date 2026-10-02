@@ -92,7 +92,9 @@ What evidence is lost through truncation?
 
 - Files after the 50th (only counted in `coverage.files_total`). The model will not know what is in them.
 - The tail of any patch over 4,000 chars, and of a body over 4,000 chars. Cuts end at a line break, so the last partial line is dropped too.
-- Once 60,000 chars are used, patches of later files. Their name, status and +/- counts are kept, so "which files changed" survives even when "how" does not.
+- The tail of a title over 300 chars, a branch name over 255, or a filename over 300 (hard cut, reported by position).
+- Once 60,000 chars are used, patches of later files. Every GitHub-supplied string counts toward that total, not just body and patches. Title, refs and filenames are counted first and always fit (at most 15,810 chars). The first patch that does not fit is cut and closes the budget. Later files keep their name, status and +/- counts, so "which files changed" survives even when "how" does not.
+- Bug I found after the first pass: only body and patches were counted, so 50 files with 4,096-char filenames reported 60,000 chars included while the envelope was about 275,000. "The budget" has to mean everything untrusted that reaches the model, or it is not a budget. After the fix the same input counts 59,999 and serializes to 72,252 (JSON keys plus server-written limitations).
 - Patches GitHub itself does not send (binary files, very large diffs). This is reported as a limitation but is not counted as our truncation (`truncated` stays false for it), because the budget did not cause it.
 - Decision: truncate and report coverage, never hard-reject (contract §10). The fetch is bounded by construction, so an extreme PR cannot cost more; the risk moves to quality, a sample of 50 out of 3,000 files can mislead. That becomes a Phase 4 eval case, not a Phase 2 rejection rule.
 - Determinism: the same GitHub JSON gives the same envelope, byte for byte (tested). The same PR URL does not always give the same JSON: the PR itself can change between requests.

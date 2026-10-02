@@ -7,38 +7,59 @@ import type { NormalizedFile, NormalizedPullRequest } from "@/lib/schemas/normal
 // locale-dependent formatting.
 //
 // "Characters" are JavaScript string length (UTF-16 code units), not bytes or
-// tokens.
+// tokens. EVERY untrusted string in the envelope (title, base/head ref,
+// filenames, body, patches) counts toward MAX_TOTAL_CHARS.
 //
 // Order:
 //   1. first MAX_FILES files in GitHub API order;
-//   2. each patch capped at MAX_PATCH_CHARS;
-//   3. body capped at MAX_BODY_CHARS;
-//   4. body, then patches in file order, until MAX_TOTAL_CHARS is reached.
-//      Files after that keep their metadata with patch = null.
+//   2. title, refs and filenames capped (MAX_TITLE/REF/FILENAME_CHARS);
+//   3. each patch capped at MAX_PATCH_CHARS;
+//   4. body capped at MAX_BODY_CHARS;
+//   5. total: title + refs + filenames first (always fit, see METADATA bound
+//      below), then body, then patches in file order until MAX_TOTAL_CHARS.
+//      The first patch that does not fit is cut (at a line break) and closes
+//      the budget; every later file keeps its metadata with patch = null.
 //
-// Limitations are server-written. They refer to files by position (#n), never
-// by filename, so untrusted PR text never enters trusted text.
+// Limitations are server-written. They refer to fields by name and to files by
+// position (#n), never by content, so untrusted PR text never enters trusted
+// text. Limitation strings themselves are not counted in the total.
 
 export const MAX_FILES = 50;
+export const MAX_TITLE_CHARS = 300;
+export const MAX_REF_CHARS = 255;
+export const MAX_FILENAME_CHARS = 300;
 export const MAX_PATCH_CHARS = 4_000;
 export const MAX_BODY_CHARS = 4_000;
 export const MAX_TOTAL_CHARS = 60_000;
+
+// Worst case for title + 2 refs + filenames + body (15,810 + 4,000). Below the
+// total, so these fields are never dropped for budget reasons; only patches are.
+const MAX_NON_PATCH_CHARS =
+  MAX_TITLE_CHARS + 2 * MAX_REF_CHARS + MAX_FILES * MAX_FILENAME_CHARS + MAX_BODY_CHARS;
+if (MAX_NON_PATCH_CHARS > MAX_TOTAL_CHARS) {
+  throw new Error("evidence budgets are inconsistent");
+}
 
 function fmt(n: number): string {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-// Cuts to at most `max` characters, at the last line break if there is one
-// (the partial line is dropped). Without a line break it is a hard cut that
-// never leaves half of a surrogate pair.
-export function cutAtLineBoundary(text: string, max: number): string {
+// Hard cut to at most `max` characters that never leaves half of a surrogate pair.
+export function cutHard(text: string, max: number): string {
   if (text.length <= max) return text;
   if (max <= 0) return "";
   const cut = text.slice(0, max);
-  const lineBreak = cut.lastIndexOf("\n");
-  if (lineBreak > 0) return cut.slice(0, lineBreak);
   const last = cut.charCodeAt(cut.length - 1);
   return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
+// Cuts to at most `max` characters, at the last line break if there is one
+// (the partial line is dropped). Without a line break it is a hard cut.
+export function cutAtLineBoundary(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max <= 0) return "";
+  const lineBreak = text.slice(0, max).lastIndexOf("\n");
+  return lineBreak > 0 ? text.slice(0, lineBreak) : cutHard(text, max);
 }
 
 export function normalizeEvidence(
@@ -48,6 +69,20 @@ export function normalizeEvidence(
 ): NormalizedPullRequest {
   const limitations: string[] = [];
   let truncated = false;
+  let charsAvailable = 0;
+  let charsIncluded = 0;
+
+  // Caps a single-line field, records the limitation, and counts it.
+  function capField(value: string, max: number, label: string): string {
+    charsAvailable += value.length;
+    const out = cutHard(value, max);
+    if (out.length < value.length) {
+      truncated = true;
+      limitations.push(`${label} cut from ${fmt(value.length)} to ${fmt(out.length)} characters (limit ${fmt(max)}).`);
+    }
+    charsIncluded += out.length;
+    return out;
+  }
 
   // 1. File count.
   const considered = files.slice(0, MAX_FILES);
@@ -59,25 +94,39 @@ export function normalizeEvidence(
     );
   }
 
-  // 3 (before the per-file loop so its limitation is listed first). Body.
+  // 2. Title, refs, filenames. Counted first; bounded so they always fit.
+  const title = capField(pull.title, MAX_TITLE_CHARS, "PR title");
+  const baseRef = capField(pull.baseRef, MAX_REF_CHARS, "Base branch name");
+  const headRef = capField(pull.headRef, MAX_REF_CHARS, "Head branch name");
+  const filenames = considered.map((file, index) =>
+    capField(file.filename, MAX_FILENAME_CHARS, `File #${index + 1}: filename`),
+  );
+
+  // 4. Body.
   let body = pull.body;
-  if (body !== null && body.length > MAX_BODY_CHARS) {
-    const original = body.length;
-    body = cutAtLineBoundary(body, MAX_BODY_CHARS);
-    truncated = true;
-    limitations.push(
-      `PR description cut from ${fmt(original)} to ${fmt(body.length)} characters (limit ${fmt(MAX_BODY_CHARS)}).`,
-    );
+  if (body !== null) {
+    charsAvailable += body.length;
+    if (body.length > MAX_BODY_CHARS) {
+      const original = body.length;
+      body = cutAtLineBoundary(body, MAX_BODY_CHARS);
+      truncated = true;
+      limitations.push(
+        `PR description cut from ${fmt(original)} to ${fmt(body.length)} characters (limit ${fmt(MAX_BODY_CHARS)}).`,
+      );
+    }
+    charsIncluded += body.length;
   }
 
-  let charsAvailable = pull.body?.length ?? 0;
-  let remaining = MAX_TOTAL_CHARS - (body?.length ?? 0);
+  // 3 + 5. Patches: per-file cap, then whatever is left of the total.
   const omitted: number[] = [];
-
+  // Set by the first patch that is cut to fit the total. Later patches are
+  // omitted even if a few characters remain, so no file gets a meaningless
+  // fragment of its diff.
+  let budgetClosed = false;
   const normalizedFiles: NormalizedFile[] = considered.map((file, index) => {
     const label = `File #${index + 1}`;
     const base = {
-      filename: file.filename,
+      filename: filenames[index],
       status: file.status,
       additions: file.additions,
       deletions: file.deletions,
@@ -90,7 +139,6 @@ export function normalizeEvidence(
 
     charsAvailable += file.patch.length;
 
-    // 2. Per-file cap.
     let patch = file.patch;
     let patchTruncated = false;
     if (patch.length > MAX_PATCH_CHARS) {
@@ -102,11 +150,12 @@ export function normalizeEvidence(
       );
     }
 
-    // 4. Total budget.
+    const remaining = budgetClosed ? 0 : MAX_TOTAL_CHARS - charsIncluded;
     if (patch.length > remaining) {
       const beforeTotalCut = patch.length;
       patch = cutAtLineBoundary(patch, remaining);
       truncated = true;
+      budgetClosed = true;
       if (patch.length === 0) {
         omitted.push(index + 1);
         return { ...base, patch: null, patch_truncated: false, patch_unavailable_reason: "evidence_budget_exhausted" };
@@ -117,7 +166,7 @@ export function normalizeEvidence(
       );
     }
 
-    remaining -= patch.length;
+    charsIncluded += patch.length;
     return { ...base, patch, patch_truncated: patchTruncated, patch_unavailable_reason: null };
   });
 
@@ -129,13 +178,13 @@ export function normalizeEvidence(
 
   return {
     pr: { owner: pr.owner, repo: pr.repo, number: pr.number },
-    title: pull.title,
+    title,
     body,
     state: pull.state,
     draft: pull.draft,
     merged: pull.merged,
-    base_ref: pull.baseRef,
-    head_ref: pull.headRef,
+    base_ref: baseRef,
+    head_ref: headRef,
     additions: pull.additions,
     deletions: pull.deletions,
     changed_files: pull.changedFiles,
@@ -144,7 +193,7 @@ export function normalizeEvidence(
       files_total: filesSeen,
       files_considered: considered.length,
       chars_available: charsAvailable,
-      chars_included: MAX_TOTAL_CHARS - remaining,
+      chars_included: charsIncluded,
     },
     truncated,
     limitations,

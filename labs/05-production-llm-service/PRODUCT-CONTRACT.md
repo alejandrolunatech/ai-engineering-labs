@@ -74,7 +74,7 @@ Rule `[BOUNDARY]`: a `[MODEL]` or `[TARGET]` statement can never be cited as if 
 - `[BOUNDARY]` Headers: `Accept: application/vnd.github+json`, `User-Agent: ChangeBrief/0.1`, `X-GitHub-Api-Version: 2026-03-10`, and `Authorization: Bearer …` only when `GITHUB_TOKEN` is set. Health reports `githubAuth: "token" | "anonymous"`, never the token.
 - `[BOUNDARY]` GitHub JSON is validated with zod and unknown fields are dropped. `NormalizedPullRequest` holds no author emails, avatars, user IDs or GitHub URLs.
 - `[BOUNDARY]` Error mapping (fixed messages, no GitHub error text): GitHub 404 → 404 `pr_not_found`; 401/403/429, timeout, over-size, bad redirect, 5xx, malformed JSON or unexpected shape → 503 `pr_not_found` ("not found or is unavailable"). The specific reason is kept as a server-side code for later telemetry and is not logged yet.
-- `[BOUNDARY]` Normalization order: first 50 files in API order → each patch ≤ 4,000 chars → body ≤ 4,000 chars → body then patches in file order until 60,000 total chars; later files keep metadata with `patch: null`. Cuts end at a line break where possible. Characters are JavaScript string length (UTF-16 code units). Every cut adds a server-written limitation that names files by position (`File #n`), never by filename. Coverage reports `files_total`, `files_considered`, `chars_available`, `chars_included`.
+- `[BOUNDARY]` Normalization order: first 50 files in API order → title ≤ 300, refs ≤ 255, filenames ≤ 300 chars → each patch ≤ 4,000 chars → body ≤ 4,000 chars → counted against the 60,000 total in the order title/refs/filenames, body, then patches in file order. The first patch that does not fit is cut and closes the budget; later files keep metadata with `patch: null`. `chars_available`/`chars_included` count all of these strings. Over-long title/ref/filename values are truncated, not treated as malformed. Cuts end at a line break where possible. Characters are JavaScript string length (UTF-16 code units). Every cut adds a server-written limitation that names files by position (`File #n`), never by filename. Coverage reports `files_total`, `files_considered`, `chars_available`, `chars_included`.
 
 ---
 
@@ -154,7 +154,10 @@ Every value below is **initial, calibrate in Phase 2** against representative pu
 | Max request body | 2 KB | **Rejected** (request too large). No external call. | `[BOUNDARY]` |
 | Max changed files considered | 50 | Truncated: first 50 in GitHub API order; `truncated=true` + limitation | `[BOUNDARY]` |
 | Max patch characters per file | 4,000 | Truncated per file; `truncated=true` + limitation | `[BOUNDARY]` |
-| Max total normalized evidence | 60,000 characters | Truncated; `truncated=true` + limitation | `[BOUNDARY]` |
+| Max total normalized evidence | 60,000 characters, counting **every** GitHub-supplied string: title, base/head ref names, filenames, body and patches | Metadata (always fits: ≤ 15,810 chars) and body first, then patches in file order; the first patch that does not fit is cut and later patches are omitted (metadata kept); `truncated=true` + limitation | `[BOUNDARY]` |
+| Max PR title | 300 characters | Truncated; `truncated=true` + limitation | `[BOUNDARY]` |
+| Max base/head ref name | 255 characters each | Truncated; `truncated=true` + limitation | `[BOUNDARY]` |
+| Max filename | 300 characters per file | Truncated; `truncated=true` + limitation naming the file by position (`File #n`) | `[BOUNDARY]` |
 | Max PR body (description) | 4,000 characters | Truncated; `truncated=true` + limitation | `[BOUNDARY]` |
 | Max GitHub API requests per analysis | 3 | No further requests; any unfetched data is reported as truncated | `[BOUNDARY]` |
 | GitHub request timeout | 10 s | Controlled "upstream unavailable" failure | `[BOUNDARY]` |

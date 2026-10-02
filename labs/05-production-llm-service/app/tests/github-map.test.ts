@@ -25,6 +25,11 @@ describe("mapPull", () => {
     expect(text).not.toContain("example.invalid");
   });
 
+  it("accepts over-long title and refs (the normalizer truncates them)", () => {
+    const raw = { ...(fixture("pull-small.json") as object), title: "t".repeat(5000), base: { ref: "b".repeat(5000) } };
+    expect(mapPull(raw)).toMatchObject({ title: "t".repeat(5000), baseRef: "b".repeat(5000) });
+  });
+
   it("defaults a missing draft flag to false", () => {
     const raw = { ...(fixture("pull-small.json") as Record<string, unknown>) };
     delete raw.draft;
@@ -37,7 +42,6 @@ describe("mapPull", () => {
     ["missing title", { ...(fixture("pull-small.json") as object), title: undefined }],
     ["bad state", { ...(fixture("pull-small.json") as object), state: "weird" }],
     ["negative count", { ...(fixture("pull-small.json") as object), changed_files: -1 }],
-    ["title over 1,024 chars", { ...(fixture("pull-small.json") as object), title: "t".repeat(1025) }],
   ])("rejects %s", (_label, raw) => {
     expect(mapPull(raw)).toBeNull();
   });
@@ -48,6 +52,11 @@ describe("mapFiles", () => {
     const files = mapFiles(fixture("files-small.json"))!;
     expect(Object.keys(files[0]).sort()).toEqual(["additions", "deletions", "filename", "patch", "status"]);
     expect(Object.keys(files[2]).sort()).toEqual(["additions", "deletions", "filename", "status"]);
+  });
+
+  it("accepts an over-long filename (the normalizer truncates it)", () => {
+    const files = mapFiles([{ filename: "f".repeat(4096), status: "added", additions: 1, deletions: 0 }]);
+    expect(files?.[0].filename).toHaveLength(4096);
   });
 
   it.each([

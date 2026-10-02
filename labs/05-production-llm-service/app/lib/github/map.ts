@@ -5,24 +5,28 @@ import { FILE_STATUSES } from "@/lib/schemas/normalized-pr";
 // fields, so user objects, avatars, emails, URLs and _links never get past this
 // point. A response that does not match is treated as malformed (unavailable),
 // never partially used.
+//
+// String lengths are NOT limited here: an over-long title, ref or filename is
+// valid GitHub data and is truncated (and reported) by lib/normalize/evidence.ts.
+// Total size is already bounded by the client's 2 MB response cap.
 
 const count = z.number().int().nonnegative();
 
 const GithubPullSchema = z.object({
-  title: z.string().max(1024),
+  title: z.string(),
   body: z.string().nullable(),
   state: z.enum(["open", "closed"]),
   draft: z.boolean().optional(),
   merged: z.boolean(),
-  base: z.object({ ref: z.string().max(1024) }),
-  head: z.object({ ref: z.string().max(1024) }),
+  base: z.object({ ref: z.string() }),
+  head: z.object({ ref: z.string() }),
   additions: count,
   deletions: count,
   changed_files: count,
 });
 
 const GithubFileSchema = z.object({
-  filename: z.string().max(4096),
+  filename: z.string(),
   status: z.enum(FILE_STATUSES),
   additions: count,
   deletions: count,
