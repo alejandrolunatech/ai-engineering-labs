@@ -77,16 +77,23 @@ Built: a read-only GitHub adapter (`app/lib/github/`), a pure normalizer (`app/l
 What real GitHub limits did I encounter?
 
 - Expected by design, not observed yet: 2 requests per normal analysis, 3 with one redirect; anonymous requests share a small per-IP hourly quota, a token raises it.
-- Observed GitHub behavior (fill in after `npm run inspect-pr` against real PRs):
-  - PR used / size: _TBD_
-  - Requests made and `x-ratelimit-remaining` before/after, anonymous: _TBD_
-  - Same with token: _TBD_
-  - Did a large PR's files list stop at 50 and did `changed_files` exceed it? _TBD_
-  - Which files came back without a `patch` (binary, large diff)? _TBD_
-  - Largest single patch seen vs the 4,000-char cap: _TBD_
-  - Renamed-repo redirect (status code and `Location` shape), if tried: _TBD_
-  - GitHub latency per request (wall time from the script): _TBD_
-  - Anything that surprised me: _TBD_
+- Observed GitHub behavior (2026-10-02/03, `npm run inspect-pr` against real PRs):
+  - PRs used:
+    - nodejs/node#45615 (merged release PR): 1,741 changed files, +102,047 / -35,631, PR body 22,816 chars.
+    - nodejs/node#66442 (small): 1 file, +32 / -27, PR body 2,186 chars.
+    - My own labs repo PRs #1 and #2: the repo is private, so anonymous GitHub returned 404 and the adapter returned a clean `pr_not_found` after 1 request, with no GitHub error text. This is a real safe-failure path.
+  - Anonymous: 2 requests per analysis (1 when the PR request already 404s). `x-ratelimit-remaining` went 59 -> 58 -> 57 -> 56 -> 55 -> 54 across runs (60/hour per IP).
+  - Same with token: nodejs/node#66442 -> `GitHub auth: token`, 2 requests, remaining 4,958 -> 4,957 (5,000/hour). The authenticated limit is per GitHub account, not per token, so other tools using my account had already used ~40. The evidence output was identical to the anonymous run of the same PR, which confirms determinism on real data.
+  - Large PR: yes. The files list stopped at 50 of 1,741 (`truncated: true`), and evidence used 59,984 of 125,762 available chars. The 2 MB per-response cap was not hit.
+  - Files without a patch: `deps/icu-small/source/data/in/icudt72l.dat.bz2` (binary) -> `not_provided_by_github`. Four more files (#47-#50) lost their patch to the 60,000-char total (`evidence_budget_exhausted`), with metadata kept.
+  - Largest patch: 16,632 chars (cut to 3,996). 7 of the 50 files in #45615 exceeded the 4,000 per-file cap. Even the small PR #66442 was truncated: its single 59-line change was a 6,177-char patch, so only 6,229 of 8,467 chars were included.
+  - Renamed-repo redirect: not tried against real GitHub (covered only by mocked tests).
+  - GitHub latency (script wall time): ~370-380 ms for a single 404 request; 887 ms (anonymous) and 1,316 ms (token) for the 2-request small PR; 1,530 ms for the 2-request large PR.
+  - Surprises:
+    1. GitHub returns changed files alphabetically by path. The 50-file sample of #45615 was `.eslintrc.js`, `.github/workflows/*`, AUTHORS, LICENSE, README and vendored `deps/`. None of the real `lib/` or `src/` changes made it in. "First 50 in API order" is a weak sampling rule; Phase 4 should prioritize files (skip `deps/`, vendored code, lockfiles, binaries).
+    2. The 4,000-char per-file cap cuts ordinary small PRs, because diff context lines add up fast. Candidate for Phase 4: raise the per-file cap (8-12k) and let the 60,000 total remain the cost guard.
+    3. Files #48 and #49 in #45615 show a per-file "patch cut" limitation but were then omitted by the total budget. The data is right but the limitation text is misleading. Fix in Phase 4.
+    4. A release PR body alone can be 22,816 chars, about 5x the 4,000 body cap.
 
 What evidence is lost through truncation?
 
@@ -109,7 +116,7 @@ How did I prevent arbitrary URL fetching?
 
 What this does not prove:
 
-- Nothing about real GitHub responses. All tests use synthetic fixtures hand-written in GitHub's documented shape (not recordings) and a mocked `fetch`. Real behavior goes in the TBD lines above.
+- Nothing about real GitHub responses. All tests use synthetic fixtures hand-written in GitHub's documented shape (not recordings) and a mocked `fetch`. Real behavior is recorded in the observed lines above.
 - Whether 50 / 4,000 / 60,000 are the right budgets. Calibration needs real PRs and later the model's token counts (Phase 5).
 - Rate-limit pressure in practice, GitHub latency, or anything about production.
 
