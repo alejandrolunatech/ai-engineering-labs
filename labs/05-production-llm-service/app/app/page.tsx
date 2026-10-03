@@ -9,8 +9,9 @@ export default function Home() {
           Paste a public GitHub pull request URL.
         </p>
         <p className="text-sm text-zinc-500">
-          Development build: this version only validates the URL and shows which GitHub API
-          endpoint the server would call. It does not contact GitHub or any AI model yet.
+          Development build: this version fetches the public pull request from the GitHub API
+          and shows the bounded evidence the server would analyze. It does not call any AI
+          model yet.
         </p>
       </header>
       <AnalyzeForm />

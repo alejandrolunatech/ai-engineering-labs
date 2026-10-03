@@ -1,23 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { DELETE, GET, PATCH, POST, PUT } from "@/app/api/analyze/route";
-import { ParsedResponseSchema } from "@/lib/schemas/analyze";
+import { API, fetchFrom, filesFor, fixture, json } from "./helpers/github";
 
 const ENDPOINT = "http://localhost/api/analyze";
 const VALID_URL = "https://github.com/vercel/next.js/pull/12345";
 
 let fetchSpy: MockInstance<typeof fetch>;
+let expectedFetches = 0;
 
 beforeEach(() => {
+  expectedFetches = 0;
   fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
-    throw new Error("network access is not allowed in Phase 1");
+    throw new Error("network access is not allowed in this test");
   });
 });
 
 afterEach(() => {
-  // Every case: the analyze boundary made no network call.
-  expect(fetchSpy).not.toHaveBeenCalled();
+  // Rejected requests never reach GitHub. Accepted ones make exactly the
+  // expected (mocked) GitHub requests.
+  expect(fetchSpy).toHaveBeenCalledTimes(expectedFetches);
   fetchSpy.mockRestore();
 });
+
+// For the few accepted-request cases in this file: serve vercel/next.js#12345
+// from the synthetic fixtures.
+function serveValidPr() {
+  expectedFetches = 2;
+  const pull = `${API}/repos/vercel/next.js/pulls/12345`;
+  fetchSpy.mockImplementation(
+    fetchFrom({ [pull]: json(fixture("pull-small.json")), [filesFor("/repos/vercel/next.js/pulls/12345")]: json(fixture("files-small.json")) }),
+  );
+}
 
 function post(body: BodyInit | null, headers: Record<string, string> = { "content-type": "application/json" }) {
   return POST(new Request(ENDPOINT, { method: "POST", body, headers }));
@@ -33,20 +46,9 @@ async function expectError(res: Response, status: number, category: string) {
   return body;
 }
 
-describe("POST /api/analyze — success", () => {
-  it("returns the parsed PR and the constructed API URL", async () => {
-    const res = await post(JSON.stringify({ url: VALID_URL }));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({
-      status: "parsed",
-      pr: { owner: "vercel", repo: "next.js", number: 12345 },
-      wouldFetch: "https://api.github.com/repos/vercel/next.js/pulls/12345",
-    });
-    expect(ParsedResponseSchema.safeParse(body).success).toBe(true);
-  });
-
+describe("POST /api/analyze — accepted input reaches ingestion", () => {
   it("accepts a content type with a charset parameter", async () => {
+    serveValidPr();
     const res = await post(JSON.stringify({ url: VALID_URL }), {
       "content-type": "Application/JSON; charset=utf-8",
     });
@@ -54,6 +56,7 @@ describe("POST /api/analyze — success", () => {
   });
 
   it("accepts a body of exactly 2048 bytes", async () => {
+    serveValidPr();
     const base = JSON.stringify({ url: VALID_URL + "?" });
     const body = JSON.stringify({ url: VALID_URL + "?" + "a".repeat(2048 - base.length) });
     expect(new TextEncoder().encode(body).byteLength).toBe(2048);
@@ -156,6 +159,25 @@ describe("POST /api/analyze — JSON shape", () => {
   it("rejects invalid UTF-8 with 400", async () => {
     const bytes = new Uint8Array([0x7b, 0x22, 0x75, 0x22, 0x3a, 0x22, 0xff, 0xfe, 0x22, 0x7d]);
     await expectError(await post(bytes), 400, "invalid_pr_url");
+  });
+
+  it.each([
+    "http://localhost:3000/o/r/pull/1",
+    "https://127.0.0.1/o/r/pull/1",
+    "https://169.254.169.254/latest/meta-data/pull/1",
+    "https://[::1]/o/r/pull/1",
+    "https://github.com.evil.com/o/r/pull/1",
+    "https://evil-github.com/o/r/pull/1",
+    "https://user:pass@github.com/o/r/pull/1",
+    "https://github.com@evil.com/o/r/pull/1",
+    "https://github.com:443/o/r/pull/1",
+    "https://github.com:8080/o/r/pull/1",
+    "https://api.github.com/repos/o/r/pulls/1",
+    "https://github.com/o/r/pull/1/../../../../repos/x",
+    "https://github.com/o/r/issues/1",
+    "file:///etc/passwd",
+  ])("rejects adversarial URL %j before any GitHub request", async (url) => {
+    await expectError(await post(JSON.stringify({ url })), 400, "invalid_pr_url");
   });
 
   it("never echoes the submitted input in an error", async () => {

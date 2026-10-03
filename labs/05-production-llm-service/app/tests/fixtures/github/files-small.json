@@ -1,0 +1,37 @@
+[
+  {
+    "sha": "1111111111111111111111111111111111111111",
+    "filename": "src/webhooks/sender.ts",
+    "status": "modified",
+    "additions": 9,
+    "deletions": 3,
+    "changes": 12,
+    "blob_url": "https://github.com/octo-org/widgets/blob/0000000000000000000000000000000000000001/src/webhooks/sender.ts",
+    "raw_url": "https://github.com/octo-org/widgets/raw/0000000000000000000000000000000000000001/src/webhooks/sender.ts",
+    "contents_url": "https://api.github.com/repos/octo-org/widgets/contents/src/webhooks/sender.ts?ref=0000000000000000000000000000000000000001",
+    "patch": "@@ -10,7 +10,13 @@ export async function send(event: Event) {\n-  const delay = BASE_DELAY_MS * 2 ** attempt;\n+  const delay = withJitter(BASE_DELAY_MS * 2 ** attempt);\n   await sleep(delay);\n }\n+\n+function withJitter(ms: number): number {\n+  return ms / 2 + Math.random() * (ms / 2);\n+}"
+  },
+  {
+    "sha": "2222222222222222222222222222222222222222",
+    "filename": "test/webhooks/sender.test.ts",
+    "status": "added",
+    "additions": 5,
+    "deletions": 0,
+    "changes": 5,
+    "blob_url": "https://github.com/octo-org/widgets/blob/x/test/webhooks/sender.test.ts",
+    "raw_url": "https://github.com/octo-org/widgets/raw/x/test/webhooks/sender.test.ts",
+    "contents_url": "https://api.github.com/repos/octo-org/widgets/contents/test/webhooks/sender.test.ts",
+    "patch": "@@ -0,0 +1,5 @@\n+import { send } from \"../../src/webhooks/sender\";\n+\n+test(\"applies jitter\", async () => {\n+  expect(send).toBeDefined();\n+});"
+  },
+  {
+    "sha": "3333333333333333333333333333333333333333",
+    "filename": "docs/diagram.png",
+    "status": "added",
+    "additions": 0,
+    "deletions": 0,
+    "changes": 0,
+    "blob_url": "https://github.com/octo-org/widgets/blob/x/docs/diagram.png",
+    "raw_url": "https://github.com/octo-org/widgets/raw/x/docs/diagram.png",
+    "contents_url": "https://api.github.com/repos/octo-org/widgets/contents/docs/diagram.png"
+  }
+]

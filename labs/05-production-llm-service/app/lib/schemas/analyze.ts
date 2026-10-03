@@ -12,13 +12,4 @@ export const PullRequestRefSchema = z.strictObject({
   number: z.number().int().min(1).max(MAX_PR_NUMBER),
 });
 
-// Phase 1 success response: the PR was parsed and the API URL constructed, but
-// nothing was fetched.
-export const ParsedResponseSchema = z.strictObject({
-  status: z.literal("parsed"),
-  pr: PullRequestRefSchema,
-  wouldFetch: z.string().startsWith("https://api.github.com/repos/"),
-});
-
 export type AnalyzeRequest = z.infer<typeof AnalyzeRequestSchema>;
-export type ParsedResponse = z.infer<typeof ParsedResponseSchema>;
