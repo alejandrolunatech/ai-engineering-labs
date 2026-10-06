@@ -44,6 +44,7 @@ Lab 05 adds a second operating principle:
 ai-engineering-labs/
 ├── README.md
 ├── LICENSE
+├── LICENSE-docs
 ├── CLAUDE.md
 ├── AGENTS.md
 ├── .gitignore
@@ -92,7 +93,7 @@ Lab 01 has no automated test suite yet; its evals call a real model and stay a m
 
 ## Licence
 
-The code in this repository (source, tests, templates and configuration) is released under the [MIT License](LICENSE). The Markdown write-ups (`*.md`) are not covered by that licence and remain all rights reserved; see the scope note in [LICENSE](LICENSE).
+The code in this repository (source, tests, templates and configuration) is released under the [MIT License](LICENSE). The Markdown write-ups (`*.md`) are released under [CC BY 4.0](LICENSE-docs): you may reuse and adapt them with credit to Alejandro Luna.
 
 ## Author
 
