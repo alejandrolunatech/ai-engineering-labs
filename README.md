@@ -92,7 +92,7 @@ Lab 01 has no automated test suite yet; its evals call a real model and stay a m
 
 ## Licence
 
-The code in this repository is released under the [MIT License](LICENSE).
+The code in this repository (source, tests, templates and configuration) is released under the [MIT License](LICENSE). The Markdown write-ups (`*.md`) are not covered by that licence and remain all rights reserved; see the scope note in [LICENSE](LICENSE).
 
 ## Author
 
