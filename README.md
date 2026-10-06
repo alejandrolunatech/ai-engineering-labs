@@ -43,9 +43,11 @@ Lab 05 adds a second operating principle:
 ```text
 ai-engineering-labs/
 ├── README.md
+├── LICENSE
 ├── CLAUDE.md
 ├── AGENTS.md
 ├── .gitignore
+├── .github/workflows/ci.yml
 └── labs/
     ├── 01-pr-guardian/
     ├── 02-zero-trust-mcp-gateway/
@@ -76,6 +78,21 @@ For Lab 05 specifically:
 - before public release: **production-oriented learning project**;
 - after the release Definition of Done is evidenced: **self-directed public production product**;
 - never relabel it as enterprise/client production work unless that is independently true.
+
+## Continuous integration
+
+Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+- a gitleaks secret scan over the full git history;
+- Lab 02: OPA/Rego policy tests and the gateway pytest suite;
+- Lab 04: the golden-path pytest suite;
+- Lab 05: lint, typecheck, unit tests and production build of the ChangeBrief app.
+
+Lab 01 has no automated test suite yet; its evals call a real model and stay a manual, local step.
+
+## Licence
+
+The code in this repository (source, tests, templates and configuration) is released under the [MIT License](LICENSE). The Markdown write-ups (`*.md`) are not covered by that licence and remain all rights reserved; see the scope note in [LICENSE](LICENSE).
 
 ## Author
 
