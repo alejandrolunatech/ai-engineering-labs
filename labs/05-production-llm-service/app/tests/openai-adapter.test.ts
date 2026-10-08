@@ -92,7 +92,7 @@ describe("OpenAI adapter — request", () => {
     await model(client).generateBrief(evidence("pull-injection.json", "files-injection.json"));
     const params = create.mock.calls[0] as unknown as [{ input: string; instructions: string }];
     expect(params[0].instructions).toBe(INSTRUCTIONS);
-    expect(params[0].instructions).not.toMatch(/<script>/);
+    expect(params[0].instructions).not.toContain("alert(document.domain)");
     const parsed = JSON.parse(params[0].input);
     expect(parsed.files[0].patch).toContain("<script>alert(document.domain)</script>");
   });
