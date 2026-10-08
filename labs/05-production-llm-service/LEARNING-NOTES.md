@@ -122,15 +122,38 @@ What this does not prove:
 
 ## Phase 3 — Real LLM integration
 
-Exact model ID:
+Built: a provider-neutral `BriefModel` interface (`app/lib/llm/types.ts`), the OpenAI adapter (`app/lib/llm/openai.ts`, the only file that imports the SDK), prompt `p3.0` (`app/lib/llm/prompt.ts`), and `POST /api/analyze` now returning `200 { status: "brief", brief }`. The normalized evidence is no longer sent to the browser. Manual paid exercise and model comparison: `op run --env-file=.env.local -- npm run brief-pr -- <PR URL> --model A --model B`.
 
-Why this model:
+Exact model ID: **TBD, my approval pending** (code reads `OPENAI_MODEL`; nothing is hard-coded).
 
-API used:
+Model check on 2026-10-08 (OpenAI docs; Standard prices per 1M tokens, input / cached input / output):
 
-First real request evidence:
+| Model | Price | Status on 2026-10-08 |
+|---|---|---|
+| `gpt-6-luna` | $0.10 / $0.01 / $0.50 | Current. OpenAI's "most efficient model for focused, high-volume tasks". Structured outputs on the Responses API. Default reasoning effort `medium`. |
+| `gpt-5.4-mini` | $0.75 / $0.075 / $4.50 | Current. |
+| `gpt-5.4-nano` | $0.20 / $0.02 / $1.25 | **Deprecated** 2026-10-01, shutdown 2027-04-01, named replacement `gpt-6-luna`. |
 
-What surprised me about latency or response behavior?
+Sources: developers.openai.com/api/docs/pricing, the three model pages, and /api/docs/deprecations. Snapshot for the script's estimates: `app/scripts/pricing-snapshot.json`.
+
+Why this model (proposal): `gpt-6-luna` as the launch candidate, `gpt-5.4-mini` as the stronger comparison. The original plan (mini vs nano) predates nano's deprecation. Luna needs adding to the `changebrief-g0` project's model allow-list first; until then a luna call fails as `bad_request`.
+
+API used: OpenAI Responses API, `openai` SDK 6.x, with:
+
+- `store: false` (OpenAI does not keep the response), no tools;
+- strict structured output: JSON Schema generated from the same Zod schema that validates the reply afterwards. The provider constraint is a convenience; the Zod check is the boundary (a Phase 4 preview, kept minimal);
+- `max_output_tokens: 1500` (contract §5), reasoning tokens included; `reasoning.effort` from `OPENAI_REASONING_EFFORT`, default `none`, so reasoning cannot eat the output budget unnoticed;
+- 30 s timeout, SDK retries set to 0 on the client AND on the request;
+- failures map to two user-facing categories: `provider_unavailable` (timeout, network, 401/403, 429, 400/404/422, 5xx) and `output_invalid` (incomplete at the token ceiling, refusal, empty, malformed JSON, schema mismatch). Provider error text is never passed on.
+- Note for later: a 429 can mean rate limit OR that the 5 USD prepaid credit is used up. Both look the same to the user; telemetry (Phase 5) should tell them apart.
+
+Tests: all mocked (fake client, fake model). They check the exact request shape, one call per analysis, no retries, null-not-zero usage, every invalid-output path, every provider-failure path, and that GitHub failures never reach the model. They cost nothing and prove nothing about model quality.
+
+First real request evidence: _to record after my first paid local run (model served, tokens in/out/cached/reasoning, llm_ms, status)._
+
+What surprised me about latency or response behavior? _to record._
+
+Worth covering in the learning audios later: the adapter boundary and why SDK objects stop there; deterministic boundaries vs prompt instructions; structured output vs independent validation; why retries are 0; reasoning tokens vs the output ceiling; model deprecation as a real operational event (nano, one week into the lab).
 
 ## Phase 4 — Structured output and evals
 

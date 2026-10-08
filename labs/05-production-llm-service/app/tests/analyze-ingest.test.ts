@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { POST } from "@/app/api/analyze/route";
 import { MAX_REQUESTS } from "@/lib/github/client";
-import { NormalizedResponseSchema } from "@/lib/schemas/normalized-pr";
+import { BriefResponseSchema } from "@/lib/schemas/change-brief";
+import { beforeEach } from "vitest";
 import { API, filesFor, fixture, json, makeFiles, mockFetch, redirect, status } from "./helpers/github";
+import { getBriefModel } from "@/lib/llm";
+import { fakeModel, type FakeModel } from "./helpers/llm";
+
+// The model is faked: no SDK, no network, no API money.
+vi.mock("@/lib/llm", () => ({ getBriefModel: vi.fn() }));
 
 // POST /api/analyze end to end with mocked GitHub responses (no network).
 
@@ -12,6 +18,12 @@ const PULL = `${API}${PULL_PATH}`;
 const FILES = filesFor(PULL_PATH);
 
 let spy: MockInstance<typeof fetch> | undefined;
+let model: FakeModel;
+
+beforeEach(() => {
+  model = fakeModel();
+  vi.mocked(getBriefModel).mockReturnValue(model);
+});
 
 afterEach(() => {
   // Request ceiling holds in every test.
@@ -38,39 +50,46 @@ async function expectUnavailable(res: Response, httpStatus = 503) {
     error: { category: "pr_not_found", message: "That public pull request was not found or is unavailable." },
   });
   expect(text).not.toContain("GITHUB-ERROR-TEXT-MARKER");
+  // A GitHub failure never reaches the model.
+  expect(model.calls).toHaveLength(0);
 }
 
-describe("POST /api/analyze — normalized evidence", () => {
-  it("fetches exactly the PR and its first files page, and returns normalized evidence", async () => {
+describe("POST /api/analyze — normalized evidence reaches the model", () => {
+  it("fetches exactly the PR and its first files page, and sends the normalized evidence to one model call", async () => {
     spy = mockFetch({ [PULL]: json(fixture("pull-small.json")), [FILES]: json(fixture("files-small.json")) });
     const res = await analyze();
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(NormalizedResponseSchema.safeParse(body).success).toBe(true);
-    expect(body.status).toBe("normalized");
-    expect(body.evidence.pr).toEqual({ owner: "octo-org", repo: "widgets", number: 42 });
-    expect(body.evidence.files).toHaveLength(3);
+    expect(BriefResponseSchema.safeParse(body).success).toBe(true);
+    expect(body.brief.pr).toEqual({ owner: "octo-org", repo: "widgets", number: 42 });
     expect(spy.mock.calls.map((c) => c[0])).toEqual([PULL, FILES]);
-    expect(JSON.stringify(body)).not.toMatch(/avatar|email|_links|html_url/);
+    expect(model.calls).toHaveLength(1);
+    expect(model.calls[0].pr).toEqual({ owner: "octo-org", repo: "widgets", number: 42 });
+    expect(model.calls[0].files).toHaveLength(3);
+    expect(JSON.stringify(model.calls[0])).not.toMatch(/avatar|email|_links|html_url/);
+    // The evidence itself is no longer returned to the browser.
+    expect(body).not.toHaveProperty("evidence");
   });
 
-  it("carries a large PR as truncated evidence instead of rejecting it", async () => {
+  it("carries a large PR as truncated evidence instead of rejecting it, and says so in the brief", async () => {
     const pull = { ...(fixture("pull-small.json") as object), changed_files: 400 };
     spy = mockFetch({ [PULL]: json(pull), [FILES]: json(makeFiles(50)) });
     const res = await analyze();
     expect(res.status).toBe(200);
-    const { evidence } = await res.json();
-    expect(evidence.truncated).toBe(true);
-    expect(evidence.coverage).toMatchObject({ files_total: 400, files_considered: 50 });
+    const { brief } = await res.json();
+    expect(model.calls[0].truncated).toBe(true);
+    expect(model.calls[0].coverage).toMatchObject({ files_total: 400, files_considered: 50 });
+    expect(brief).toMatchObject({ truncated: true, files_total: 400, files_considered: 50 });
+    expect(brief.truncation_limitations.length).toBeGreaterThan(0);
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it("returns untrusted PR text as JSON data, unchanged", async () => {
+  it("passes untrusted PR text to the model as JSON data, unchanged", async () => {
     spy = mockFetch({ [PULL]: json(fixture("pull-injection.json")), [FILES]: json(fixture("files-injection.json")) });
     const res = await analyze();
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^application\/json/);
-    const { evidence } = await res.json();
+    const evidence = model.calls[0];
     expect(evidence.title).toBe((fixture("pull-injection.json") as { title: string }).title);
     expect(evidence.files[0].patch).toContain("<script>alert(document.domain)</script>");
   });

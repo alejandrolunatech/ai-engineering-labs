@@ -3,7 +3,8 @@ import { PullRequestRefSchema } from "@/lib/schemas/analyze";
 
 // ChangeBrief output schema, version 0.1 (PRODUCT-CONTRACT.md §3).
 // Field names follow the contract's proposed names. Phase 4 hardens them
-// (string limits, list sizes, risk levels). Nothing produces this object yet.
+// (string limits, list sizes, risk levels). Phase 3: POST /api/analyze returns
+// it, built from one model call (lib/llm/) plus server-written fields.
 
 export const SCHEMA_VERSION = "0.1";
 
@@ -34,7 +35,10 @@ export const ModelBriefSchema = z.strictObject({
 export const UsageSchema = z
   .strictObject({
     input_tokens: z.number().int().nonnegative().nullable(),
+    cached_input_tokens: z.number().int().nonnegative().nullable(),
     output_tokens: z.number().int().nonnegative().nullable(),
+    // Part of output_tokens; billed as output.
+    reasoning_tokens: z.number().int().nonnegative().nullable(),
   })
   .nullable();
 
@@ -67,3 +71,11 @@ export const ChangeBriefSchema = z.strictObject({
 
 export type ModelBrief = z.infer<typeof ModelBriefSchema>;
 export type ChangeBrief = z.infer<typeof ChangeBriefSchema>;
+
+// POST /api/analyze success response from Phase 3.
+export const BriefResponseSchema = z.strictObject({
+  status: z.literal("brief"),
+  brief: ChangeBriefSchema,
+});
+
+export type BriefResponse = z.infer<typeof BriefResponseSchema>;

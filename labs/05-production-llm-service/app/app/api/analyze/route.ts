@@ -2,16 +2,19 @@ import { getConfig } from "@/lib/config";
 import { errorResponse } from "@/lib/http/errors";
 import { readBodyWithLimit } from "@/lib/http/read-body";
 import { ingestPullRequest } from "@/lib/github/ingest";
+import { getBriefModel } from "@/lib/llm";
+import { PROMPT_VERSION } from "@/lib/llm/prompt";
 import { parsePrUrl } from "@/lib/pr-url";
 import { AnalyzeRequestSchema } from "@/lib/schemas/analyze";
-import type { NormalizedResponse } from "@/lib/schemas/normalized-pr";
+import { ChangeBriefSchema, SCHEMA_VERSION, type BriefResponse } from "@/lib/schemas/change-brief";
 
-// POST /api/analyze — Phase 2: validate, parse, then fetch and normalize the
-// public PR from GitHub. No LLM call.
+// POST /api/analyze — Phase 3: validate, parse, fetch and normalize the public
+// PR from GitHub, then make ONE model call and return a validated ChangeBrief.
 //
 // Check order (each step is deterministic and runs before any later one):
 //   method -> content type -> capped body read -> JSON -> request shape -> PR URL
-//   -> GitHub ingestion (the first and only external call).
+//   -> model configured? -> GitHub ingestion -> one model call -> validation.
+// The GitHub and model calls are the only external calls. No retries.
 
 function isJsonContentType(header: string | null): boolean {
   if (header === null) return false;
@@ -55,6 +58,12 @@ export async function POST(request: Request): Promise<Response> {
       return errorResponse("invalid_pr_url", 400);
     }
 
+    // Fail closed before spending GitHub quota when no model is configured.
+    const model = getBriefModel(config.llm);
+    if (model === null) {
+      return errorResponse("provider_unavailable", 503);
+    }
+
     const ingest = await ingestPullRequest(parsed.pr);
     if (!ingest.ok) {
       // ingest.reason is a server-side code kept for later telemetry. It is not
@@ -64,9 +73,37 @@ export async function POST(request: Request): Promise<Response> {
         : errorResponse("pr_not_found", 503);
     }
 
-    // DEVELOPMENT OUTPUT, replaced in Phase 3: the browser gets the normalized
-    // evidence so it can be inspected. Phase 3 sends it to the model instead.
-    const response: NormalizedResponse = { status: "normalized", evidence: ingest.evidence };
+    const evidence = ingest.evidence;
+    const result = await model.generateBrief(evidence);
+    if (!result.ok) {
+      // result.reason stays server-side, like ingest.reason above.
+      return result.kind === "output_invalid"
+        ? errorResponse("output_invalid", 502)
+        : errorResponse("provider_unavailable", 503);
+    }
+
+    // Server-written fields come from code, never from the model
+    // (PRODUCT-CONTRACT.md §3b). Truncation is reported whatever the model says.
+    const brief = ChangeBriefSchema.safeParse({
+      pr: evidence.pr,
+      truncated: evidence.truncated,
+      truncation_limitations: evidence.limitations,
+      files_considered: evidence.coverage.files_considered,
+      files_total: evidence.coverage.files_total,
+      schema_version: SCHEMA_VERSION,
+      prompt_version: PROMPT_VERSION,
+      model: result.model,
+      usage: result.usage,
+      // Phase 5 adds the dated pricing snapshot. Until then cost is unknown.
+      estimated_cost: null,
+      ai_generated: true,
+      brief: result.brief,
+    });
+    if (!brief.success) {
+      return errorResponse("output_invalid", 502);
+    }
+
+    const response: BriefResponse = { status: "brief", brief: brief.data };
     return Response.json(response, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch {
     // Never echo the exception: it could contain request content.

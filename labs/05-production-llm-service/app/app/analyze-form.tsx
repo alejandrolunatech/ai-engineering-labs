@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { NormalizedResponse } from "@/lib/schemas/normalized-pr";
+import type { BriefResponse } from "@/lib/schemas/change-brief";
 
 // Everything shown here is rendered as React text nodes. No server or PR
 // content is ever injected as HTML.
 //
-// Phase 2 development view: shows the normalized evidence envelope (metadata,
-// coverage, limitations). Patch and body text are not displayed. Phase 3
-// replaces this with the ChangeBrief.
+// Phase 3 view: the validated ChangeBrief. It is always labelled AI-generated,
+// and truncation and uncertainty are always shown. Phase 7 polishes the UX.
 
 type ErrorResult = {
   status: "error";
@@ -18,7 +17,7 @@ type ErrorResult = {
 type ViewState =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "normalized"; result: NormalizedResponse }
+  | { kind: "brief"; result: BriefResponse }
   | { kind: "error"; category: string; message: string };
 
 export function AnalyzeForm() {
@@ -34,9 +33,9 @@ export function AnalyzeForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
       });
-      const data = (await res.json()) as NormalizedResponse | ErrorResult;
-      if (data.status === "normalized") {
-        setView({ kind: "normalized", result: data });
+      const data = (await res.json()) as BriefResponse | ErrorResult;
+      if (data.status === "brief") {
+        setView({ kind: "brief", result: data });
       } else {
         setView({ kind: "error", category: data.error.category, message: data.error.message });
       }
@@ -70,12 +69,12 @@ export function AnalyzeForm() {
           disabled={view.kind === "loading"}
           className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
         >
-          {view.kind === "loading" ? "Fetching…" : "Fetch PR"}
+          {view.kind === "loading" ? "Analyzing…" : "Explain PR"}
         </button>
       </form>
 
       <div aria-live="polite">
-        {view.kind === "normalized" && <EvidenceView result={view.result} />}
+        {view.kind === "brief" && <BriefView result={view.result} />}
         {view.kind === "error" && (
           <p role="alert" className="text-sm text-red-700 dark:text-red-400">
             {view.message}
@@ -86,48 +85,75 @@ export function AnalyzeForm() {
   );
 }
 
-function EvidenceView({ result }: { result: NormalizedResponse }) {
-  const e = result.evidence;
+function List({ title, items }: { title: string; items: readonly string[] }) {
   return (
-    <div className="flex flex-col gap-4 text-sm">
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
-        <dt className="text-zinc-500">Pull request</dt>
-        <dd className="font-mono">
-          {e.pr.owner}/{e.pr.repo}#{e.pr.number}
-        </dd>
-        <dt className="text-zinc-500">Title</dt>
-        <dd className="break-words">{e.title}</dd>
-        <dt className="text-zinc-500">State</dt>
-        <dd>
-          {e.merged ? "merged" : e.state}
-          {e.draft ? " (draft)" : ""}
-        </dd>
-        <dt className="text-zinc-500">Files</dt>
-        <dd>
-          {e.coverage.files_considered} of {e.coverage.files_total} considered
-        </dd>
-        <dt className="text-zinc-500">Evidence</dt>
-        <dd>
-          {e.coverage.chars_included} of {e.coverage.chars_available} characters included
-        </dd>
-        <dt className="text-zinc-500">Truncated</dt>
-        <dd>{e.truncated ? "yes" : "no"}</dd>
-      </dl>
-      {e.limitations.length > 0 && (
-        <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-400">
-          {e.limitations.map((text, i) => (
+    <section className="flex flex-col gap-1">
+      <h3 className="font-medium">{title}</h3>
+      {items.length === 0 ? (
+        <p className="text-zinc-500">Nothing supported by the evidence.</p>
+      ) : (
+        <ul className="list-disc pl-5">
+          {items.map((text, i) => (
             <li key={i}>{text}</li>
           ))}
         </ul>
       )}
-      <ol className="list-decimal pl-5 font-mono text-xs">
-        {e.files.map((file, i) => (
-          <li key={i} className="break-all">
-            {file.filename} — {file.status}, {file.patch === null ? "no patch" : `${file.patch.length} chars`}
-            {file.patch_truncated ? " (truncated)" : ""}
-          </li>
-        ))}
-      </ol>
+    </section>
+  );
+}
+
+function fmt(n: number | null): string {
+  return n === null ? "unknown" : String(n);
+}
+
+function BriefView({ result }: { result: BriefResponse }) {
+  const b = result.brief;
+  const m = b.brief;
+  return (
+    <div className="flex flex-col gap-4 text-sm">
+      <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+        AI-generated by {b.model}. It may be wrong; check it against the pull request.
+      </p>
+      {b.truncated && (
+        <section className="rounded-md border border-zinc-300 px-3 py-2 dark:border-zinc-700">
+          <p className="font-medium">
+            Partial evidence: {b.files_considered} of {b.files_total} files were considered.
+          </p>
+          <ul className="list-disc pl-5 text-zinc-600 dark:text-zinc-400">
+            {b.truncation_limitations.map((text, i) => (
+              <li key={i}>{text}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <p className="font-mono text-xs text-zinc-500">
+        {b.pr.owner}/{b.pr.repo}#{b.pr.number}
+      </p>
+      <section className="flex flex-col gap-1">
+        <h3 className="font-medium">Summary</h3>
+        <p>{m.summary}</p>
+      </section>
+      <section className="flex flex-col gap-1">
+        <h3 className="font-medium">Why it matters</h3>
+        <p>{m.why_it_matters}</p>
+      </section>
+      <section className="flex flex-col gap-1">
+        <h3 className="font-medium">Change risk: {m.risk.level}</h3>
+        <List title="Based on" items={m.risk.evidence} />
+        <List title="Uncertainty" items={m.risk.uncertainty} />
+      </section>
+      <List title="User and business impact" items={m.user_impact} />
+      <List title="Technical impact" items={m.technical_impact} />
+      <List title="Testing signals in the PR" items={m.testing_signals} />
+      <List title="Rollout" items={m.rollout_considerations} />
+      <List title="Rollback" items={m.rollback_considerations} />
+      <List title="Open questions" items={m.open_questions} />
+      <List title="Limitations" items={m.limitations} />
+      <p className="font-mono text-xs text-zinc-500">
+        schema {b.schema_version} · prompt {b.prompt_version} · tokens in {fmt(b.usage?.input_tokens ?? null)} (cached{" "}
+        {fmt(b.usage?.cached_input_tokens ?? null)}) · out {fmt(b.usage?.output_tokens ?? null)} (reasoning{" "}
+        {fmt(b.usage?.reasoning_tokens ?? null)}) · cost {b.estimated_cost === null ? "unknown" : `~$${b.estimated_cost.usd}`}
+      </p>
     </div>
   );
 }

@@ -1,15 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { DELETE, GET, PATCH, POST, PUT } from "@/app/api/analyze/route";
 import { API, fetchFrom, filesFor, fixture, json } from "./helpers/github";
+import { getBriefModel } from "@/lib/llm";
+import { fakeModel, type FakeModel } from "./helpers/llm";
+
+// The model is faked: no SDK, no network, no API money.
+vi.mock("@/lib/llm", () => ({ getBriefModel: vi.fn() }));
 
 const ENDPOINT = "http://localhost/api/analyze";
 const VALID_URL = "https://github.com/vercel/next.js/pull/12345";
 
 let fetchSpy: MockInstance<typeof fetch>;
 let expectedFetches = 0;
+let model: FakeModel;
 
 beforeEach(() => {
   expectedFetches = 0;
+  model = fakeModel();
+  vi.mocked(getBriefModel).mockReturnValue(model);
   fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
     throw new Error("network access is not allowed in this test");
   });
@@ -19,6 +27,8 @@ afterEach(() => {
   // Rejected requests never reach GitHub. Accepted ones make exactly the
   // expected (mocked) GitHub requests.
   expect(fetchSpy).toHaveBeenCalledTimes(expectedFetches);
+  // Rejected requests never reach the model; accepted ones call it once.
+  expect(model.calls).toHaveLength(expectedFetches > 0 ? 1 : 0);
   fetchSpy.mockRestore();
 });
 

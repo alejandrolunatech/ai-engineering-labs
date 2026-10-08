@@ -9,10 +9,12 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "inspect-pr": "node --env-file-if-exists=.env.local --conditions=react-server --import ./scripts/alias-loader.mjs scripts/inspect-pr.ts"
+    "inspect-pr": "node --env-file-if-exists=.env.local --conditions=react-server --import ./scripts/alias-loader.mjs scripts/inspect-pr.ts",
+    "brief-pr": "node --env-file-if-exists=.env.local --conditions=react-server --import ./scripts/alias-loader.mjs scripts/brief-pr.ts"
   },
   "dependencies": {
     "next": "16.3.8",
+    "openai": "^6.49.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
