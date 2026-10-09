@@ -60,13 +60,3 @@ export const NormalizedPullRequestSchema = z.strictObject({
 
 export type NormalizedFile = z.infer<typeof NormalizedFileSchema>;
 export type NormalizedPullRequest = z.infer<typeof NormalizedPullRequestSchema>;
-
-// POST /api/analyze success response in Phase 2. DEVELOPMENT OUTPUT: Phase 3
-// replaces it with the ChangeBrief; the evidence is then sent to the model,
-// not returned to the browser.
-export const NormalizedResponseSchema = z.strictObject({
-  status: z.literal("normalized"),
-  evidence: NormalizedPullRequestSchema,
-});
-
-export type NormalizedResponse = z.infer<typeof NormalizedResponseSchema>;

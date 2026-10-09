@@ -24,6 +24,8 @@ const shippedFiles = [
     .map((n) => join(ROOT, "scripts", n)),
 ];
 
+// The OpenAI SDK makes its own HTTPS calls inside node_modules; it is fenced
+// by the import guard below (only lib/llm/openai.ts may import it).
 const NETWORK_CALL = /\bfetch\s*\(|\bhttps?\.request\b|\bhttps?\.get\b|XMLHttpRequest|\bnet\.connect\b|WebSocket/;
 const GITHUB_CLIENT = join("lib", "github", "client.ts");
 // The browser form posts to this app's own API route. It is the only other
@@ -47,6 +49,26 @@ describe("source guards", () => {
   it("reads GITHUB_TOKEN only in the client (value) and config (presence)", () => {
     const readers = shippedFiles.filter((f) => /GITHUB_TOKEN/.test(readFileSync(f, "utf8")));
     expect(readers.map((f) => relative(ROOT, f)).sort()).toEqual([join("lib", "config.ts"), GITHUB_CLIENT].sort());
+  });
+
+  it("imports the OpenAI SDK only in lib/llm/openai.ts", () => {
+    const importers = shippedFiles.filter((f) => /from\s+["']openai["']|require\(["']openai["']\)/.test(readFileSync(f, "utf8")));
+    expect(importers.map((f) => relative(ROOT, f))).toEqual([join("lib", "llm", "openai.ts")]);
+  });
+
+  it("reads OPENAI_API_KEY only in config (presence) and lib/llm/index.ts (value)", () => {
+    const readers = shippedFiles.filter((f) => /OPENAI_API_KEY/.test(readFileSync(f, "utf8")));
+    expect(readers.map((f) => relative(ROOT, f)).sort()).toEqual([join("lib", "config.ts"), join("lib", "llm", "index.ts")].sort());
+  });
+
+  it("the model modules are server-only", () => {
+    for (const rel of [join("lib", "llm", "openai.ts"), join("lib", "llm", "index.ts")]) {
+      expect(readFileSync(join(ROOT, rel), "utf8")).toMatch(/^import "server-only";/m);
+    }
+  });
+
+  it("gives the model no tools", () => {
+    expect(readFileSync(join(ROOT, "lib", "llm", "openai.ts"), "utf8")).not.toMatch(/\btools\s*:/);
   });
 
   it("uses no NEXT_PUBLIC_ variables", () => {

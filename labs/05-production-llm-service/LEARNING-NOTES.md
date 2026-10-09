@@ -122,15 +122,55 @@ What this does not prove:
 
 ## Phase 3 — Real LLM integration
 
-Exact model ID:
+Built: a provider-neutral `BriefModel` interface (`app/lib/llm/types.ts`), the OpenAI adapter (`app/lib/llm/openai.ts`, the only file that imports the SDK), prompt `p3.0` (`app/lib/llm/prompt.ts`), and `POST /api/analyze` now returning `200 { status: "brief", brief }`. The normalized evidence is no longer sent to the browser. Manual paid exercise and model comparison: `op run --env-file=.env.local -- npm run brief-pr -- <PR URL> --model A --model B`.
 
-Why this model:
+Exact model ID: **`gpt-6-luna`** is the launch candidate (my decision, 2026-10-08), with `gpt-5.4-mini` (`gpt-5.4-mini-2026-03-17`) as the comparison. The final pick waits on Phase 4 evals. The code reads `OPENAI_MODEL`; nothing is hard-coded.
 
-API used:
+Model check on 2026-10-08 (OpenAI docs; Standard prices per 1M tokens, input / cached input / output):
 
-First real request evidence:
+| Model | Price | Status on 2026-10-08 |
+|---|---|---|
+| `gpt-6-luna` | $0.10 / $0.01 / $0.50 | Current. OpenAI's "most efficient model for focused, high-volume tasks". Structured outputs on the Responses API. Default reasoning effort `medium`. |
+| `gpt-5.4-mini` | $0.75 / $0.075 / $4.50 | Current. |
+| `gpt-5.4-nano` | $0.20 / $0.02 / $1.25 | **Deprecated** 2026-10-01, shutdown 2027-04-01, named replacement `gpt-6-luna`. |
+
+Sources: developers.openai.com/api/docs/pricing, the three model pages, and /api/docs/deprecations. Snapshot for the script's estimates: `app/scripts/pricing-snapshot.json`.
+
+Why this model: `gpt-6-luna` as the launch candidate, `gpt-5.4-mini` as the stronger comparison. The original plan (mini vs nano) predates nano's deprecation. Luna was added to the `changebrief-g0` project's model allow-list; without that, a luna call fails as `bad_request`.
+
+API used: OpenAI Responses API, `openai` SDK 6.x, with:
+
+- `store: false` (OpenAI does not keep the response), no tools;
+- strict structured output: JSON Schema generated from the same Zod schema that validates the reply afterwards. The provider constraint is a convenience; the Zod check is the boundary (a Phase 4 preview, kept minimal);
+- `max_output_tokens: 1500` (contract §5), reasoning tokens included; `reasoning.effort` from `OPENAI_REASONING_EFFORT`, default `none`, so reasoning cannot eat the output budget unnoticed;
+- 30 s timeout, SDK retries set to 0 on the client AND on the request;
+- failures map to two user-facing categories: `provider_unavailable` (timeout, network, 401/403, 429, 400/404/422, 5xx) and `output_invalid` (incomplete at the token ceiling, refusal, empty, malformed JSON, schema mismatch). Provider error text is never passed on.
+- Note for later: a 429 can mean rate limit OR that the 5 USD prepaid credit is used up. Both look the same to the user; telemetry (Phase 5) should tell them apart.
+
+Tests: all mocked (fake client, fake model). They check the exact request shape, one call per analysis, no retries, null-not-zero usage, every invalid-output path, every provider-failure path, and that GitHub failures never reach the model. They cost nothing and prove nothing about model quality.
+
+First real request evidence (2026-10-09, my Mac, `npm run brief-pr -- https://github.com/nodejs/node/pull/66442 --model gpt-6-luna --model gpt-5.4-mini --save`, prompt p3.0, effort none, one call per model, no retries):
+
+- GitHub: 2 requests, 1,361 ms. 1 of 1 files, 6,229 of 8,467 evidence chars, `truncated: true` (the per-file patch cap).
+- Both calls returned `ok`: the reply parsed and passed schema validation, and both rated the risk `low`.
+
+| Model requested | Model served | llm_ms | Input tokens (cached) | Output tokens (reasoning) | Estimated USD |
+|---|---|---|---|---|---|
+| `gpt-6-luna` | `gpt-6-luna` | 5,547 | 2,483 (0) | 298 (0) | 0.000397 |
+| `gpt-5.4-mini` | `gpt-5.4-mini-2026-03-17` | 3,840 | 2,483 (0) | 437 (0) | 0.003829 |
+
+The costs are estimates from `scripts/pricing-snapshot.json` (2026-10-08), not billing truth. This is ONE request per model, so it is evidence that the integration works, not a model comparison. Phase 4 evals decide quality.
 
 What surprised me about latency or response behavior?
+
+- Same evidence, same input tokens (2,483) for both. The tokenizer count matched across the two model families.
+- Luna was about 10x cheaper on this request but about 1.7 s slower. One sample is not a latency finding; Phase 5 measures distributions.
+- 60,000 evidence chars was planned as roughly 15k tokens (4 chars per token). Here 6,229 evidence chars plus the instructions came to 2,483 input tokens. JSON framing and instructions add overhead, so a ratio needs more samples.
+- The served model ID differs from the requested one for mini (a dated snapshot) but not for luna (alias only, no dated snapshot listed). The brief reports the served ID, which is the honest one.
+- Luna's summary said the patch was truncated. Mini's did not, but it explained the intent more clearly. That is the kind of difference Phase 4 evals should score: the truncation case is already on the Phase 4 list.
+- Node prints a `MODULE_TYPELESS_PACKAGE_JSON` warning for the TypeScript scripts. It is harmless (Node reparses the file as an ES module) and also applies to `inspect-pr`.
+
+Worth covering in the learning audios later: the adapter boundary and why SDK objects stop there; deterministic boundaries vs prompt instructions; structured output vs independent validation; why retries are 0; reasoning tokens vs the output ceiling; model deprecation as a real operational event (nano, one week into the lab).
 
 ## Phase 4 — Structured output and evals
 
