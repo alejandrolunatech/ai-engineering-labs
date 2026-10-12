@@ -230,7 +230,7 @@ export function decide(summaries: readonly ConfigSummary[]): Decision {
 
 // Report text can contain model output: keep it on one line and out of table syntax.
 function cell(text: string, max = 220): string {
-  const flat = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+  const flat = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 

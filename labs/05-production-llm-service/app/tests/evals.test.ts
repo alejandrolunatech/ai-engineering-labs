@@ -304,13 +304,13 @@ describe("eval runner", () => {
     const base = summarize([], [LUNA])[0];
     const s = {
       ...base,
-      failures: [{ case_id: "x", repeat: 1, check: "c", severity: "core" as const, detail: "a | b\nc" }],
+      failures: [{ case_id: "x", repeat: 1, check: "c", severity: "core" as const, detail: "a | b\nc \\| d" }],
     };
     const md = toMarkdown(
       { generated_at: "t", eval_set_version: "e1", prompt_version: "p", schema_version: "0.2", pricing_as_of: "d", repeat: 1, cases: ["x"] },
       [s],
       { pick: null, reasons: [] },
     );
-    expect(md).toContain("| a \\| b c |");
+    expect(md).toContain("| a \\| b c \\\\\\| d |");
   });
 });
