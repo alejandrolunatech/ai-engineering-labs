@@ -1,20 +1,33 @@
 import { z } from "zod";
 import { PullRequestRefSchema } from "@/lib/schemas/analyze";
 
-// ChangeBrief output schema, version 0.1 (PRODUCT-CONTRACT.md §3).
-// Field names follow the contract's proposed names. Phase 4 hardens them
-// (string limits, list sizes, risk levels). Phase 3: POST /api/analyze returns
+// ChangeBrief output schema (PRODUCT-CONTRACT.md §3). POST /api/analyze returns
 // it, built from one model call (lib/llm/) plus server-written fields.
+//
+// Versions (bump on ANY change to fields or limits; it ships with every brief):
+// - 0.1 (Phase 1-3): shape only.
+// - 0.2 (Phase 4): size limits on every model-written string and list.
 
-export const SCHEMA_VERSION = "0.1";
+export const SCHEMA_VERSION = "0.2";
 
-const TextList = z.array(z.string());
+// [BOUNDARY] Size limits. They bound what the UI renders and what a reply can
+// contain; they are deliberately looser than the prompt's style asks (at most 5
+// short items), so an eval can measure the style without the schema turning a
+// slightly long answer into an error. A reply outside these limits is rejected.
+export const BRIEF_LIMITS = {
+  paragraphChars: 800,
+  itemChars: 400,
+  listItems: 8,
+} as const;
 
-// §3a — the model writes the content. The schema enforces shape only; it says
-// nothing about whether the content is true.
+const Paragraph = z.string().trim().min(1).max(BRIEF_LIMITS.paragraphChars);
+const TextList = z.array(z.string().trim().min(1).max(BRIEF_LIMITS.itemChars)).max(BRIEF_LIMITS.listItems);
+
+// §3a — the model writes the content. The schema enforces shape and size only;
+// it says nothing about whether the content is true. Evals measure that.
 export const ModelBriefSchema = z.strictObject({
-  summary: z.string(),
-  why_it_matters: z.string(),
+  summary: Paragraph,
+  why_it_matters: Paragraph,
   user_impact: TextList,
   technical_impact: TextList,
   risk: z.strictObject({
@@ -53,7 +66,10 @@ export const EstimatedCostSchema = z
 export const ServerFieldsSchema = z.strictObject({
   pr: PullRequestRefSchema,
   truncated: z.boolean(),
-  truncation_limitations: TextList,
+  // Server-written by lib/normalize/evidence.ts (one line per affected file, so
+  // up to ~100 short lines). NOT the model's TextList: its 8-item cap would turn
+  // a valid large-PR brief into output_invalid after a paid call.
+  truncation_limitations: z.array(z.string()),
   files_considered: z.number().int().nonnegative(),
   files_total: z.number().int().nonnegative(),
   schema_version: z.literal(SCHEMA_VERSION),

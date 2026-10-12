@@ -55,7 +55,7 @@ describe("POST /api/analyze — brief", () => {
     expect(BriefResponseSchema.safeParse(body).success).toBe(true);
     expect(body.brief).toMatchObject({
       pr: { owner: "octo-org", repo: "widgets", number: 42 },
-      schema_version: "0.1",
+      schema_version: "0.2",
       prompt_version: PROMPT_VERSION,
       model: "gpt-test-model",
       usage: FAKE_USAGE,

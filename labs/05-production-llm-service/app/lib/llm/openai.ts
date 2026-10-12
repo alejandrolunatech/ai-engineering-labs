@@ -28,8 +28,24 @@ export const LLM_MAX_RETRIES = 0;
 // Strict JSON Schema for the provider's structured-output mode, generated from
 // the same Zod schema that validates the reply. The provider constraint is a
 // convenience; the Zod check below is the boundary.
-export const MODEL_BRIEF_JSON_SCHEMA: Record<string, unknown> = z.toJSONSchema(ModelBriefSchema) as Record<string, unknown>;
-delete MODEL_BRIEF_JSON_SCHEMA.$schema;
+//
+// Size keywords (length and item counts) are removed from the copy sent to the
+// provider: support for them in strict mode varies by model, and an unsupported
+// keyword would fail every request. The limits stay enforced by Zod after the
+// reply, and the prompt states them.
+const SIZE_KEYWORDS = new Set(["minLength", "maxLength", "minItems", "maxItems"]);
+
+function withoutSizeKeywords(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(withoutSizeKeywords);
+  if (node === null || typeof node !== "object") return node;
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter(([key]) => !SIZE_KEYWORDS.has(key) && key !== "$schema")
+      .map(([key, value]) => [key, withoutSizeKeywords(value)]),
+  );
+}
+
+export const MODEL_BRIEF_JSON_SCHEMA = withoutSizeKeywords(z.toJSONSchema(ModelBriefSchema)) as Record<string, unknown>;
 
 // The slice of the SDK this adapter uses, so tests can pass a fake client.
 type CreateParams = Parameters<OpenAI["responses"]["create"]>[0];

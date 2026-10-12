@@ -204,3 +204,17 @@ describe("OpenAI adapter — provider failures", () => {
     expect(JSON.stringify(result)).not.toContain("PROVIDER-ERROR-TEXT-MARKER");
   });
 });
+
+describe("OpenAI adapter — provider schema copy", () => {
+  it("drops size keywords from the provider copy; Zod still enforces them", () => {
+    const text = JSON.stringify(MODEL_BRIEF_JSON_SCHEMA);
+    expect(text).not.toMatch(/maxLength|minLength|maxItems|minItems/);
+  });
+
+  it("rejects a reply over the size limits as schema_mismatch", async () => {
+    const tooMany = { ...VALID_MODEL_BRIEF, open_questions: Array.from({ length: 9 }, (_, i) => `q${i}`) };
+    const { client } = fakeClient(() => okResponse({ output_text: JSON.stringify(tooMany) }));
+    const result = await model(client).generateBrief(evidence());
+    expect(result).toMatchObject({ ok: false, kind: "output_invalid", reason: "schema_mismatch" });
+  });
+});
