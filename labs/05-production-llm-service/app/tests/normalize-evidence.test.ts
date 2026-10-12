@@ -195,6 +195,16 @@ describe("normalizeEvidence — total evidence (limit 60,000)", () => {
     ]);
   });
 
+  it("does not report a per-file cut for a patch the total budget then omitted", () => {
+    // 15 patches just under the per-file cap fill the total; the 16th and 17th
+    // are over the cap AND omitted: only the omitted line may mention them.
+    const huge = lines(80); // ~8,000 chars, over the per-file cap
+    const out = normalize(pull({ changedFiles: 17, body: null }), makeFiles(17, (i) => (i < 15 ? big : huge)));
+    expect(out.files.slice(15).every((f) => f.patch === null && f.patch_unavailable_reason === "evidence_budget_exhausted")).toBe(true);
+    expect(out.limitations.some((l) => l.startsWith("File #16:") || l.startsWith("File #17:"))).toBe(false);
+    expect(out.limitations.at(-1)).toContain("(#16, #17) were omitted");
+  });
+
   it("counts the body against the total before patches", () => {
     const body = "b".repeat(MAX_BODY_CHARS);
     const out = normalize(pull({ changedFiles: 50, body }), makeFiles(50, () => big));

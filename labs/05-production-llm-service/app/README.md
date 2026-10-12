@@ -2,7 +2,7 @@
 
 Development build, not a production service. See the lab README for status.
 
-## Run locally (Phase 3)
+## Run locally (Phase 3+)
 
 `.env.local` (git-ignored) holds 1Password references, never real values:
 
@@ -23,6 +23,16 @@ op run --env-file=.env.local -- npm run brief-pr -- https://github.com/nodejs/no
 ```
 
 `npm run inspect-pr -- <PR URL>` still shows the GitHub evidence with no model call.
+
+## Behavioral evals (Phase 4)
+
+```bash
+npm run evals -- --dry-run                          # plan only: no calls, no key, no cost
+op run --env-file=.env.local -- npm run evals       # PAID: 8 cases x 3 configs x 3 repeats = 72 calls
+op run --env-file=.env.local -- npm run evals -- --config gpt-6-luna:none --repeat 1 --case security-auth
+```
+
+Cases and checks live in `evals/`; reports go to `evals/reports/` (git-ignored). `npm test` checks the eval harness itself and never calls a model.
 
 ---
 

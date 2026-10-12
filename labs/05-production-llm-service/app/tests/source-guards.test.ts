@@ -16,9 +16,11 @@ function sourceFiles(dir: string): string[] {
 }
 
 const appFiles = [...sourceFiles(join(ROOT, "app")), ...sourceFiles(join(ROOT, "lib"))];
-// Everything that ships or runs outside tests (scripts/ includes .mjs).
+// Everything that ships or runs outside tests (scripts/ includes .mjs; evals/
+// runs through scripts/run-evals.ts).
 const shippedFiles = [
   ...appFiles,
+  ...sourceFiles(join(ROOT, "evals")),
   ...readdirSync(join(ROOT, "scripts"))
     .filter((n) => /\.(ts|mjs)$/.test(n))
     .map((n) => join(ROOT, "scripts", n)),

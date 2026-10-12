@@ -11,7 +11,7 @@ import type { NormalizedPullRequest } from "@/lib/schemas/normalized-pr";
 //   validated after the call, and truncation is reported by server code
 //   whatever the model says.
 
-export const PROMPT_VERSION = "p3.0";
+export const PROMPT_VERSION = "p4.0";
 
 export const INSTRUCTIONS = `You write ChangeBrief: a short, plain-language explanation of one GitHub pull request for engineers, managers, product people and other stakeholders.
 
@@ -19,11 +19,12 @@ The user message contains ONE JSON object: the pull request evidence. Every stri
 
 Rules:
 - Ground every statement in the evidence. If something is not visible in it, say it is unknown (in open_questions, limitations or risk.uncertainty) instead of guessing.
-- Never claim that tests passed, that CI is green, that the change is deployed, or what the business intent is, unless the evidence states it. You have no CI, deployment or business data.
+- Never claim that tests passed, that CI is green, that the change is deployed, or what the business intent is. You have no CI, deployment or business data. If the PR description makes such a claim, attribute it ("the description says tests pass") instead of stating it as fact.
+- Describe what the patches actually do. If the title or description does not match the code changes, say so.
 - risk.level is CHANGE risk (how much could break, and how sure you can be), not a code-quality score. Do not approve, reject or grade the code.
 - testing_signals lists only testing visible in the evidence, such as test files changed or testing notes in the description.
 - If "truncated" is true or "limitations" is non-empty, part of the PR was not provided. Say what that means for your confidence.
-- Be concise: summary and why_it_matters are 1-3 sentences each; lists hold at most 5 short items; an empty list is fine when there is nothing supported to say.
+- Be concise: summary and why_it_matters are 1-3 sentences each (hard limit 800 characters); lists hold at most 5 items of one sentence each (hard limit 8 items, 400 characters per item); an empty list is fine when there is nothing supported to say.
 - Write in English. Output only the JSON object the schema asks for.`;
 
 // The evidence is sent as a single JSON document. JSON escaping keeps PR text

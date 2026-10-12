@@ -141,13 +141,15 @@ export function normalizeEvidence(
 
     let patch = file.patch;
     let patchTruncated = false;
+    // Recorded only if some of the patch is kept: a patch omitted by the total
+    // budget below is reported once, in the omitted-files line (Phase 4 fix of
+    // a per-file "cut" line that described a patch the model never received).
+    let perFileCut: string | null = null;
     if (patch.length > MAX_PATCH_CHARS) {
       patch = cutAtLineBoundary(patch, MAX_PATCH_CHARS);
       patchTruncated = true;
       truncated = true;
-      limitations.push(
-        `${label}: patch cut from ${fmt(file.patch.length)} to ${fmt(patch.length)} characters (per-file limit ${fmt(MAX_PATCH_CHARS)}).`,
-      );
+      perFileCut = `${label}: patch cut from ${fmt(file.patch.length)} to ${fmt(patch.length)} characters (per-file limit ${fmt(MAX_PATCH_CHARS)}).`;
     }
 
     const remaining = budgetClosed ? 0 : MAX_TOTAL_CHARS - charsIncluded;
@@ -160,12 +162,15 @@ export function normalizeEvidence(
         omitted.push(index + 1);
         return { ...base, patch: null, patch_truncated: false, patch_unavailable_reason: "evidence_budget_exhausted" };
       }
+      if (perFileCut !== null) limitations.push(perFileCut);
+      perFileCut = null;
       patchTruncated = true;
       limitations.push(
         `${label}: patch cut from ${fmt(beforeTotalCut)} to ${fmt(patch.length)} characters to fit the ${fmt(MAX_TOTAL_CHARS)}-character total evidence limit.`,
       );
     }
 
+    if (perFileCut !== null) limitations.push(perFileCut);
     charsIncluded += patch.length;
     return { ...base, patch, patch_truncated: patchTruncated, patch_unavailable_reason: null };
   });

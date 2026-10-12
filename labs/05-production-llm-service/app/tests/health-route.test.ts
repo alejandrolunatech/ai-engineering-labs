@@ -18,7 +18,7 @@ describe("GET /api/health", () => {
     expect(body).toEqual({
       status: "ok",
       config: "valid",
-      schemaVersion: "0.1",
+      schemaVersion: "0.2",
       githubAuth: "anonymous",
       llm: { status: "not_configured" },
     });

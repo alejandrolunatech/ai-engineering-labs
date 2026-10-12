@@ -12,40 +12,21 @@
 // writes each result to .briefs/ (git-ignored) for side-by-side reading.
 // Never prints the API key.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { getConfig, REASONING_EFFORTS } from "@/lib/config";
 import { ingestPullRequest } from "@/lib/github/ingest";
 import { briefModelFor } from "@/lib/llm";
 import { MAX_OUTPUT_TOKENS } from "@/lib/llm/openai";
 import { PROMPT_VERSION } from "@/lib/llm/prompt";
-import type { ModelResult, ModelUsage } from "@/lib/llm/types";
+import type { ModelResult } from "@/lib/llm/types";
 import { parsePrUrl } from "@/lib/pr-url";
+import { estimateCost, loadPricingSnapshot, priceFor } from "@/scripts/pricing";
 
 type Effort = (typeof REASONING_EFFORTS)[number];
-type Price = { input: number; cached_input: number; output: number };
-type Snapshot = { as_of: string; models: Record<string, Price> };
 
 // Model output can echo PR text: escape control characters before printing.
 function safe(text: string): string {
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
-}
-
-function priceFor(snapshot: Snapshot, model: string): Price | null {
-  // Served IDs can be dated snapshots ("gpt-5.4-mini-2026-03-17"): match the
-  // longest alias that prefixes it.
-  const alias = Object.keys(snapshot.models)
-    .filter((a) => model === a || model.startsWith(`${a}-`))
-    .sort((a, b) => b.length - a.length)[0];
-  return alias === undefined ? null : snapshot.models[alias];
-}
-
-// Unknown usage or price -> unknown cost, never zero.
-function estimate(usage: ModelUsage | null, price: Price | null): number | null {
-  if (usage === null || price === null) return null;
-  const { input_tokens: input, output_tokens: output } = usage;
-  if (input === null || output === null) return null;
-  const cached = usage.cached_input_tokens ?? 0;
-  return ((input - cached) * price.input + cached * price.cached_input + output * price.output) / 1_000_000;
 }
 
 function parseArgs(argv: string[]) {
@@ -99,7 +80,7 @@ async function main(): Promise<number> {
     console.error("No API key in the environment. Run through: op run --env-file=.env.local -- npm run brief-pr -- ...");
     return 2;
   }
-  const snapshot = JSON.parse(readFileSync(new URL("./pricing-snapshot.json", import.meta.url), "utf8")) as Snapshot;
+  const snapshot = loadPricingSnapshot();
 
   const { owner, repo, number } = parsed.pr;
   console.log(`PR: ${owner}/${repo}#${number}   prompt ${PROMPT_VERSION}   effort ${effort}   max output ${MAX_OUTPUT_TOKENS} tokens`);
@@ -122,7 +103,7 @@ async function main(): Promise<number> {
   for (const id of models) {
     const result = await briefModelFor(id, effort)!.generateBrief(e);
     const served = result.ok ? result.model : (result.model ?? id);
-    const cost = estimate(result.usage, priceFor(snapshot, served));
+    const cost = estimateCost(result.usage, priceFor(snapshot, served));
     rows.push({ model: id, result, cost });
 
     const u = result.usage;
