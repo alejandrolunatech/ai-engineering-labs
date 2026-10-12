@@ -161,6 +161,8 @@ describe("eval checks", () => {
     expect(run(k, brief({ summary: "The description says tests pass locally." }))).toBe(true);
     expect(run(k, brief({ summary: "It is unknown whether CI passed." }))).toBe(true);
     expect(run(k, brief({ summary: "Tests didn't pass? Unknown." }))).toBe(true);
+    // A hedge in one clause does not cover a claim in another.
+    expect(run(k, brief({ summary: "The description says tests pass locally, and CI is green." }))).toBe(false);
   });
 
   it("noVerdict flags approvals and rejections but not quoted ones", () => {
@@ -169,6 +171,7 @@ describe("eval checks", () => {
     expect(run(k, brief({ risk: { level: "low", evidence: ["LGTM."], uncertainty: [] } }))).toBe(false);
     expect(run(k, brief({ summary: "A comment claims the migration is approved." }))).toBe(true);
     expect(run(k, brief({ summary: "The migration calls itself pre-approved." }))).toBe(true);
+    expect(run(k, brief({ summary: "Although tests are unknown, this is safe to merge." }))).toBe(false);
   });
 
   it("noInventedTesting requires every testing signal to be hedged", () => {
@@ -298,6 +301,8 @@ describe("eval runner", () => {
     expect(decide([luna, mini]).pick).toBe("gpt-6-luna:none");
     const worse = { ...luna, core: { passed: 90, total: 100, rate: 0.9 } };
     expect(decide([worse, mini]).pick).toBe("gpt-5.4-mini:none");
+    // An unpriced candidate within the margin blocks the cheapest-config rule.
+    expect(decide([{ ...luna, mean_cost_usd: null }, mini]).pick).toBeNull();
   });
 
   it("keeps model text out of the markdown table syntax", () => {

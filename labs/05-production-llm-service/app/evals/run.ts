@@ -218,12 +218,14 @@ export function decide(summaries: readonly ConfigSummary[]): Decision {
   reasons.push(
     `Best core pass rate ${(best * 100).toFixed(1)}%; within ${QUALITY_MARGIN * 100} points: ${close.map((s) => s.config).join(", ")}.`,
   );
-  const priced = close.filter((s) => s.mean_cost_usd !== null);
-  if (priced.length === 0) {
-    reasons.push("No cost estimate for those configs: cannot apply the cheapest-config rule.");
+  // Unknown cost is unknown, not cheap or expensive: one unpriced candidate
+  // means the cheapest-config rule cannot be applied.
+  const unpriced = close.filter((s) => s.mean_cost_usd === null);
+  if (unpriced.length > 0) {
+    reasons.push(`No cost estimate for ${unpriced.map((s) => s.config).join(", ")}: cannot apply the cheapest-config rule.`);
     return { pick: null, reasons };
   }
-  const cheapest = priced.reduce((a, b) => (b.mean_cost_usd! < a.mean_cost_usd! ? b : a));
+  const cheapest = close.reduce((a, b) => (b.mean_cost_usd! < a.mean_cost_usd! ? b : a));
   reasons.push(`Cheapest of those by mean estimated cost per brief: ${cheapest.config}.`);
   return { pick: cheapest.config, reasons };
 }

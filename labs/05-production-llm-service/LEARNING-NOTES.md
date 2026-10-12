@@ -174,7 +174,7 @@ Worth covering in the learning audios later: the adapter boundary and why SDK ob
 
 ## Phase 4 — Structured output and evals
 
-Built: output schema `0.2`, prompt `p4.0`, eval set `e1` (8 synthetic cases, `app/evals/`), and a runner: `op run --env-file=.env.local -- npm run evals` (PAID; `--dry-run` shows the plan for free).
+Built: output schema `0.2`, prompt `p4.0`, eval set `e2` (8 synthetic cases, `app/evals/`), and a runner: `op run --env-file=.env.local -- npm run evals` (PAID; `--dry-run` shows the plan for free).
 
 The output contract, layer by layer:
 
@@ -183,7 +183,7 @@ The output contract, layer by layer:
 - `[BOUNDARY]` Independent validation after the provider returns was already there in Phase 3: parse, `ModelBriefSchema`, then `ChangeBriefSchema` on the full response. A reply that breaks any limit is `output_invalid` (502) and never reaches the UI.
 - `[MODEL]` Prompt `p4.0` adds: attribute claims from the description ("the description says tests pass") instead of stating them; say when the title or description does not match the patches; the length limits.
 
-Eval-set size: 8 cases (`e1`), each run 3 times per config: 72 calls for the three configs `gpt-6-luna:none`, `gpt-6-luna:low`, `gpt-5.4-mini:none`. Expected cost from the Phase 3 numbers: about 0.10-0.15 USD in total (estimate).
+Eval-set size: 8 cases (`e2`), each run 3 times per config: 72 calls for the three configs `gpt-6-luna:none`, `gpt-6-luna:low`, `gpt-5.4-mini:none`. Expected cost from the Phase 3 numbers: about 0.10-0.15 USD in total (estimate).
 
 | Case | Scenario | Core checks (decide the pick) | Bonus |
 |---|---|---|---|
@@ -200,7 +200,7 @@ Every case is synthetic, written for this repo, and built through the real GitHu
 
 Which checks are deterministic vs model-quality judgments?
 
-- `[DETERMINISTIC]` The evidence, the grading and the pick rule. The checks are keyword groups, risk levels and claim patterns: same brief in, same verdict out. `npm test` covers them (`app/tests/evals.test.ts`): each check passes and fails on canned briefs, a hand-written reference brief per case passes every check (no check is impossible), and the runner and pick rule run against a fake model.
+- `[DETERMINISTIC]` The evidence, the grading and the pick rule. The claim checks (no test-pass claim, no verdict) look at one clause at a time, so a hedge such as "the description says" only excuses the clause it is in. The checks are keyword groups, risk levels and claim patterns: same brief in, same verdict out. `npm test` covers them (`app/tests/evals.test.ts`): each check passes and fails on canned briefs, a hand-written reference brief per case passes every check (no check is impossible), and the runner and pick rule run against a fake model.
 - `[PROBABILISTIC]` The briefs. That is why each case runs 3 times per config.
 - The checks are a proxy for quality, not quality. They can fail a good brief (a paraphrase the keywords miss) or pass a weak one (the keyword appears, the explanation is still poor). A failure is a reason to read the saved brief in `evals/reports/*.json`, not a verdict by itself.
 - `npm test` never calls a model. Evals run only through `npm run evals`, need the key and cost money.
@@ -219,6 +219,8 @@ Baseline pass rate: TBD, first paid run pending on my Mac.
 Known failure modes: TBD, from the baseline.
 
 Final model: TBD, from the rule above.
+
+Fixed during review (Codex on PR #7): schema 0.2 first reused the model's 8-item list limit for the server-written `truncation_limitations`, so a PR with 9+ binary or cut files would have returned 502 after a paid call. Server limitations are now an unbounded server list again, with a route test using 20 binary files. Also: an unpriced config within the quality margin now blocks the pick instead of being skipped, and e1 became e2 when hedges were scoped to clauses (no e1 baseline existed).
 
 Also fixed: the Phase 2 note about files #48 and #49. A patch cut by the per-file cap and then omitted by the total budget no longer gets a "patch cut" line; only the omitted-files line mentions it.
 

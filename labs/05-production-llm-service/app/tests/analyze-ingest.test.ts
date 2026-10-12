@@ -84,6 +84,17 @@ describe("POST /api/analyze — normalized evidence reaches the model", () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it("returns a brief when the server writes more limitations than a model list may hold", async () => {
+    // 20 binary files: one "no patch" limitation each, more than the 8-item model list cap.
+    const files = makeFiles(20, () => undefined);
+    const pull = { ...(fixture("pull-small.json") as object), changed_files: 20 };
+    spy = mockFetch({ [PULL]: json(pull), [FILES]: json(files) });
+    const res = await analyze();
+    expect(res.status).toBe(200);
+    const { brief } = await res.json();
+    expect(brief.truncation_limitations).toHaveLength(20);
+  });
+
   it("passes untrusted PR text to the model as JSON data, unchanged", async () => {
     spy = mockFetch({ [PULL]: json(fixture("pull-injection.json")), [FILES]: json(fixture("files-injection.json")) });
     const res = await analyze();

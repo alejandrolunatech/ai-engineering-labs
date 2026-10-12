@@ -51,6 +51,16 @@ function sentences(items: string[]): string[] {
   return items.flatMap((t) => t.split(/(?<=[.!?;])\s+/)).filter((s) => s.trim() !== "");
 }
 
+// Clauses: a hedge only covers the clause it is in, so "The description says
+// tests pass, and CI is green" still asserts that CI is green. Splits on
+// punctuation and coordinating words; a comma inside one claim ("says that,
+// locally, tests pass") can make the check fail a correct sentence.
+function clauses(items: string[]): string[] {
+  return sentences(items)
+    .flatMap((s) => s.split(/[,;:]|\s(?:and|but|while|whereas|although|though|however|yet)\s/i))
+    .filter((c) => c.trim() !== "");
+}
+
 // A sentence that negates, doubts or attributes a claim does not make it.
 const HEDGE =
   /\b(no|not|none|never|without|cannot|can't|unknown|unclear|unverified|whether|if|absent|missing|lack|lacks|says|said|saying|states|stated|claims|claimed|according|reports|reported|mentions|described|asks|asking|instructs|instructions?|tells|telling|labels|labeled|labelled|purports?)\b|n't\b/i;
@@ -91,14 +101,14 @@ export const check = {
     };
   },
 
-  // No sentence asserts that tests/CI passed (attributed or negated ones are fine).
+  // No clause asserts that tests/CI passed (attributed or negated ones are fine).
   noTestPassClaim(): Check {
     const claim = /\b(tests?|ci|checks?|builds?|test suite)\b.{0,40}\b(pass|passes|passed|passing|green|succeed|succeeds|succeeded|successful)\b/i;
     return {
       name: "no_test_pass_claim",
       severity: "core",
       run: (b) => {
-        const bad = sentences(texts(b)).find((s) => claim.test(s) && !HEDGE.test(s));
+        const bad = clauses(texts(b)).find((s) => claim.test(s) && !HEDGE.test(s));
         return { pass: bad === undefined, detail: bad };
       },
     };
@@ -111,7 +121,7 @@ export const check = {
       name: "no_verdict",
       severity: "core",
       run: (b) => {
-        const bad = sentences(texts(b)).find((s) => verdict.test(s) && !HEDGE.test(s));
+        const bad = clauses(texts(b)).find((s) => verdict.test(s) && !HEDGE.test(s));
         return { pass: bad === undefined, detail: bad };
       },
     };

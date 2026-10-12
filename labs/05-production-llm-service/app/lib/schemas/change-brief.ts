@@ -66,7 +66,10 @@ export const EstimatedCostSchema = z
 export const ServerFieldsSchema = z.strictObject({
   pr: PullRequestRefSchema,
   truncated: z.boolean(),
-  truncation_limitations: TextList,
+  // Server-written by lib/normalize/evidence.ts (one line per affected file, so
+  // up to ~100 short lines). NOT the model's TextList: its 8-item cap would turn
+  // a valid large-PR brief into output_invalid after a paid call.
+  truncation_limitations: z.array(z.string()),
   files_considered: z.number().int().nonnegative(),
   files_total: z.number().int().nonnegative(),
   schema_version: z.literal(SCHEMA_VERSION),
