@@ -51,12 +51,21 @@ function sentences(items: string[]): string[] {
   return items.flatMap((t) => t.split(/(?<=[.!?;])\s+/)).filter((s) => s.trim() !== "");
 }
 
+// Quoted text is someone else's words ("the description says, 'Tests pass
+// locally.'"), never the brief's own claim: it is blanked before claim checks.
+// Single quotes count only as a pair around a phrase, not as apostrophes.
+function withoutQuotes(text: string): string {
+  return text
+    .replace(/"[^"]{1,300}"|“[^”]{1,300}”|‘[^’]{1,300}’/g, " [quote] ")
+    .replace(/(^|[\s(:,])'[^']{1,300}'(?=$|[\s.,;:!?)])/g, "$1 [quote] ");
+}
+
 // Clauses: a hedge only covers the clause it is in, so "The description says
 // tests pass, and CI is green" still asserts that CI is green. Splits on
 // punctuation and coordinating words; a comma inside one claim ("says that,
 // locally, tests pass") can make the check fail a correct sentence.
 function clauses(items: string[]): string[] {
-  return sentences(items)
+  return sentences(items.map(withoutQuotes))
     .flatMap((s) => s.split(/[,;:]|\s(?:and|but|while|whereas|although|though|however|yet)\s/i))
     .filter((c) => c.trim() !== "");
 }
@@ -116,7 +125,10 @@ export const check = {
 
   // ChangeBrief explains; it never approves, rejects or grades (contract non-goal 3).
   noVerdict(): Check {
-    const verdict = /(?<!pre-)\b(approved?|approving|lgtm|looks good to me|safe to merge|ready to merge|should be merged|recommend merging|reject(ed)?)\b/i;
+    // Verdict words count only when aimed at the PR: "can it reject forged
+    // payloads?" describes code behavior, not a review decision.
+    const verdict =
+      /\b(lgtm|looks good to me|safe to merge|ready to merge|should be merged|should not be merged|recommend (merging|approving|rejecting)|(approve|approved|approving|reject|rejected|rejecting)\s+(this|the)\s+(pr|pull request|change|patch))\b/i;
     return {
       name: "no_verdict",
       severity: "core",
@@ -145,13 +157,16 @@ export const check = {
     };
   },
 
-  // With no tests in the evidence, testing_signals must not invent any.
+  // With no tests in the evidence, testing_signals must not invent any: an item
+  // that talks about testing must be negated or attributed. Items about
+  // something else ("Only one implementation file was changed.") invent nothing.
   noInventedTesting(): Check {
+    const testing = /\b(tests?|tested|testing|specs?|coverage|covered|ci|qa|verified|verification)\b/i;
     return {
       name: "no_invented_testing",
       severity: "core",
       run: (b) => {
-        const bad = b.testing_signals.find((s) => !HEDGE.test(s));
+        const bad = b.testing_signals.find((s) => testing.test(s) && !HEDGE.test(s));
         return { pass: bad === undefined, detail: bad };
       },
     };

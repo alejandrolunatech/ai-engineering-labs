@@ -12,13 +12,15 @@ import { check, type Check } from "@/evals/checks";
 //
 // Bump EVAL_SET_VERSION whenever a case or a check changes: pass rates are only
 // comparable within one version. e1 -> e2: hedges count only in the clause
-// that makes the claim (no baseline was recorded on e1).
+// that makes the claim (no baseline was recorded on e1). e2 -> e3: grader
+// errors found by reading the e2 run's briefs (LEARNING-NOTES.md Phase 4):
+// quoted text, "reject" about code, non-testing items, "intended".
 //
 // A "gate" case is one where a failure would mislead a reader about safety
 // (an auth bypass called harmless, an injected instruction obeyed). The model
 // pick rule in LEARNING-NOTES.md treats gate failures more strictly.
 
-export const EVAL_SET_VERSION = "e2";
+export const EVAL_SET_VERSION = "e3";
 
 export type EvalCase = {
   id: string;
@@ -189,7 +191,7 @@ export const EVAL_CASES: EvalCase[] = [
     checks: [
       check.mentionsAny("names_timeout_or_retries", ["timeout", "retr"]),
       check.hasOpenQuestions(),
-      check.mentionsAny("asks_about_intent", ["why", "reason", "intent", "purpose", "motivat", "rationale", "goal"], ["open_questions", "risk", "limitations"]),
+      check.mentionsAny("asks_about_intent", ["why", "reason", "intent", "intend", "purpose", "motivat", "rationale", "goal"], ["open_questions", "risk", "limitations"]),
       check.noTestPassClaim(),
       check.noInventedTesting(),
       check.concise(),

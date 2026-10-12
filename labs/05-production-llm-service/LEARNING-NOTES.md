@@ -174,7 +174,7 @@ Worth covering in the learning audios later: the adapter boundary and why SDK ob
 
 ## Phase 4 — Structured output and evals
 
-Built: output schema `0.2`, prompt `p4.0`, eval set `e2` (8 synthetic cases, `app/evals/`), and a runner: `op run --env-file=.env.local -- npm run evals` (PAID; `--dry-run` shows the plan for free).
+Built: output schema `0.2`, prompt `p4.0`, eval set `e3` (8 synthetic cases, `app/evals/`), and a runner: `op run --env-file=.env.local -- npm run evals` (PAID; `--dry-run` shows the plan for free).
 
 The output contract, layer by layer:
 
@@ -183,7 +183,7 @@ The output contract, layer by layer:
 - `[BOUNDARY]` Independent validation after the provider returns was already there in Phase 3: parse, `ModelBriefSchema`, then `ChangeBriefSchema` on the full response. A reply that breaks any limit is `output_invalid` (502) and never reaches the UI.
 - `[MODEL]` Prompt `p4.0` adds: attribute claims from the description ("the description says tests pass") instead of stating them; say when the title or description does not match the patches; the length limits.
 
-Eval-set size: 8 cases (`e2`), each run 3 times per config: 72 calls for the three configs `gpt-6-luna:none`, `gpt-6-luna:low`, `gpt-5.4-mini:none`. Expected cost from the Phase 3 numbers: about 0.10-0.15 USD in total (estimate).
+Eval-set size: 8 cases (`e3`), each run 3 times per config: 72 calls for the three configs `gpt-6-luna:none`, `gpt-6-luna:low`, `gpt-5.4-mini:none`. Expected cost from the Phase 3 numbers: about 0.10-0.15 USD in total (estimate).
 
 | Case | Scenario | Core checks (decide the pick) | Bonus |
 |---|---|---|---|
@@ -214,7 +214,25 @@ Model pick rule (written 2026-10-12, BEFORE the first paid baseline; implemented
 5. Bonus checks and latency do not change the pick; they are recorded as notes.
 6. If no config qualifies, there is no final model and Phase 4 is not done.
 
-Baseline pass rate: TBD, first paid run pending on my Mac.
+First paid run, e2 (2026-10-12, my Mac, 72 calls, all 72 schema-valid, about 0.084 USD estimated in total). Recorded as evidence about the GRADER, not as the baseline:
+
+| config | core | bonus | gate failures | mean llm_ms | mean est. cost/brief |
+|---|---|---|---|---|---|
+| gpt-6-luna:none | 95.1% (97/102) | 100% | 0 | 3,999 | $0.000265 |
+| gpt-6-luna:low | 96.1% (98/102) | 96.7% | 0 | 4,528 | $0.000280 |
+| gpt-5.4-mini:none | 96.1% (98/102) | 100% | 3 | 3,354 | $0.002956 |
+
+The rule's mechanical answer was `gpt-6-luna:none`, with mini disqualified on 3 security-auth runs. Rule step 2 says to read the briefs first. All four of mini's failures were grader errors, not model errors:
+
+- `no_test_pass_claim` x2: "The PR description says, 'Tests pass locally.'" and 'The PR description says: "Tests pass locally."'. The clause split (added after the Codex review) cut the attribution off at the comma or colon, leaving the bare quote. Fix: quoted text is blanked before claim checks.
+- `no_verdict`: "can it reject forged payloads?" is about what the code does, not a review decision. Fix: verdict words count only when aimed at the PR ("approve this PR", "safe to merge", "LGTM").
+- `no_invented_testing` (missing-context): "Only a single implementation file was changed." makes no testing claim. Fix: only items that talk about testing must be hedged.
+
+Reading luna's failures the same way found one grader error in the other direction: "Are the longer timeout and higher retry limit intended for all orders?" asks about intent, but "intended" did not match "intent". Fix: add "intend". Luna's other failures are real: on missing-context it asked about tests or compatibility instead of why (twice), and in one run per luna config it asked nothing at all. In one misleading-title run luna described both changes but never said the title understates them.
+
+Each fix has a regression test built from the exact sentence that was misgraded. Eval set e2 -> e3; per the rule, every config is re-run on e3 and that run is the baseline.
+
+Baseline pass rate: TBD, e3 run pending.
 
 Known failure modes: TBD, from the baseline.
 

@@ -163,6 +163,10 @@ describe("eval checks", () => {
     expect(run(k, brief({ summary: "Tests didn't pass? Unknown." }))).toBe(true);
     // A hedge in one clause does not cover a claim in another.
     expect(run(k, brief({ summary: "The description says tests pass locally, and CI is green." }))).toBe(false);
+    // Quoted text is attribution (both seen in the e2 run).
+    expect(run(k, brief({ testing_signals: ["The PR description says, 'Tests pass locally.'"] }))).toBe(true);
+    expect(run(k, brief({ testing_signals: ['The PR description says: "Tests pass locally."'] }))).toBe(true);
+    expect(run(k, brief({ summary: "The author’s note: tests pass locally." }))).toBe(false);
   });
 
   it("noVerdict flags approvals and rejections but not quoted ones", () => {
@@ -172,6 +176,9 @@ describe("eval checks", () => {
     expect(run(k, brief({ summary: "A comment claims the migration is approved." }))).toBe(true);
     expect(run(k, brief({ summary: "The migration calls itself pre-approved." }))).toBe(true);
     expect(run(k, brief({ summary: "Although tests are unknown, this is safe to merge." }))).toBe(false);
+    expect(run(k, brief({ summary: "I would approve this PR." }))).toBe(false);
+    // "reject" about code behavior is not a review decision (seen in the e2 run).
+    expect(run(k, brief({ open_questions: ["What does `toSession` validate, and can it reject forged payloads?"] }))).toBe(true);
   });
 
   it("noInventedTesting requires every testing signal to be hedged", () => {
@@ -179,6 +186,8 @@ describe("eval checks", () => {
     expect(run(k, brief({ testing_signals: [] }))).toBe(true);
     expect(run(k, brief({ testing_signals: ["No test files were changed."] }))).toBe(true);
     expect(run(k, brief({ testing_signals: ["Unit tests cover the new parser."] }))).toBe(false);
+    // Not a testing claim at all (seen in the e2 run).
+    expect(run(k, brief({ testing_signals: ["Only a single implementation file was changed."] }))).toBe(true);
   });
 
   it("acknowledgesLimits looks only at limitations, risk and open questions", () => {
