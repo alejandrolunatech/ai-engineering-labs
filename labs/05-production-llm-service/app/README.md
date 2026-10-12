@@ -8,7 +8,7 @@ Development build, not a production service. See the lab README for status.
 
 ```bash
 OPENAI_API_KEY=op://Dev/changebrief-g0/credential
-OPENAI_MODEL=<model id>            # e.g. gpt-6-luna once it is on the project allow-list
+OPENAI_MODEL=gpt-6-luna            # Phase 4 eval pick; must be on the project allow-list
 # OPENAI_REASONING_EFFORT=none     # optional: none | low | medium | high
 ```
 

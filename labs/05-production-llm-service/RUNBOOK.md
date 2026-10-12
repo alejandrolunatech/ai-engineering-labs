@@ -9,7 +9,7 @@ This file begins as a runbook contract. Replace placeholders with the real deplo
 - Intended custom domain: `changebrief.alejandrolunatech.com`
 - Hosting: Vercel (target)
 - LLM provider: OpenAI (target)
-- Exact production model: TBD. Launch candidate `gpt-6-luna`; the final pick comes from the Phase 4 eval rule (LEARNING-NOTES.md Phase 4). A model change is a behavior change: re-run `npm run evals` before promoting one.
+- Exact production model: `gpt-6-luna` with `OPENAI_REASONING_EFFORT=none`, picked by the Phase 4 eval rule on 2026-10-12 (LEARNING-NOTES.md Phase 4, `app/evals/BASELINE-e3.md`). A model change is a behavior change: re-run `npm run evals` before promoting one.
 - Source repository: `alejandrolunatech/ai-engineering-labs`
 - Lab path: `labs/05-production-llm-service`
 
