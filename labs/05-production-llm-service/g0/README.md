@@ -52,7 +52,7 @@ Open the PR's "Files changed" tab next to the brief.
 
 ## Results
 
-Run 2026-10-13 on the owner's MacBook: `gpt-6-luna`, effort `none`, prompt p4.0, schema 0.2, one call per PR, no retries. Raw briefs stay local in `app/.briefs/` (git-ignored). Hand checks are Claude's pre-grade, checked against each PR's diff (diffs of #3-#7 read in full); the owner confirmed A, B and D; usefulness scores (G) are Claude's until the owner scores or accepts them.
+Run 2026-10-13 on the owner's MacBook: `gpt-6-luna`, effort `none`, prompt p4.0, schema 0.2, one call per PR, no retries. Raw briefs stay local in `app/.briefs/` (git-ignored). Hand checks are Claude's pre-grade, checked against each PR's diff (diffs of #3-#7 read in full); the owner confirmed A, B and D; the owner accepted Claude's usefulness scores (G) unchanged on 2026-10-13.
 
 | # | PR | status | files used / total | truncated | risk | llm_ms | est. USD | A | B | C | D | E | F | G | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -75,7 +75,7 @@ Totals: 10/10 schema-valid briefs, 0 provider errors, total est. cost 0.005983 U
 
 1. 10/10 valid briefs: met.
 2. Hard fails: none (owner confirmed).
-3. Median usefulness: 3 on Claude's pre-grade. Pending the owner's own scores.
+3. Median usefulness: 3 (owner accepted the scores): met.
 4. Cost 0.006 USD < 0.10 USD: met.
 
 ### What G0 found
@@ -87,4 +87,4 @@ Totals: 10/10 schema-valid briefs, 0 provider errors, total est. cost 0.005983 U
 
 Carry to Phase 6/eval set e4: a real-PR security-fix case and a migration rollout/rollback case.
 
-Verdict: **pending**. Criteria 1, 2 and 4 are met (owner confirmed A, B and D on 2026-10-13, no hard fails). Criterion 3 needs the owner's usefulness scores before G0 can pass.
+Verdict: **PASS** (2026-10-13). All four criteria met; the owner confirmed A, B and D and accepted the G scores.
