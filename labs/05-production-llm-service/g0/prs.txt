@@ -1,0 +1,12 @@
+# G0 local gate: 10 real public PRs, picked 2026-10-13 for variety, not for easy wins.
+# One URL per line; lines starting with # are skipped by the run loop.
+https://github.com/fastapi/fastapi/pull/13000
+https://github.com/reactjs/tr.react.dev/pull/662
+https://github.com/rubocop/rubocop-rails/pull/1409
+https://github.com/django/django/pull/18000
+https://github.com/rails/rails/pull/51000
+https://github.com/psf/requests/pull/6655
+https://github.com/mastodon/mastodon/pull/13695
+https://github.com/laravel/framework/pull/53338
+https://github.com/kubernetes/kubernetes/pull/125000
+https://github.com/microsoft/TypeScript/pull/51387
