@@ -74,7 +74,7 @@ Totals: 10/10 schema-valid briefs, 0 provider errors, total est. cost 0.005983 U
 ### Against the pass rule
 
 1. 10/10 valid briefs: met.
-2. Hard fails: none in the pre-grade. Owner to confirm.
+2. Hard fails: none (owner confirmed).
 3. Median usefulness: 3: met.
 4. Cost 0.006 USD < 0.10 USD: met.
 
@@ -87,4 +87,4 @@ Totals: 10/10 schema-valid briefs, 0 provider errors, total est. cost 0.005983 U
 
 Carry to Phase 6/eval set e4: a real-PR security-fix case and a migration rollout/rollback case.
 
-Verdict: **provisional pass** (Claude pre-grade, 2026-10-13); final after the owner confirms checks A, B and D.
+Verdict: **PASS** (2026-10-13). Owner confirmed checks A, B and D on the pre-grade; no hard fails.
