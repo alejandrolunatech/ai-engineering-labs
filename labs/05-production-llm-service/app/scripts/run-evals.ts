@@ -31,6 +31,7 @@ import {
 import { briefModelFor } from "@/lib/llm";
 import { PROMPT_VERSION } from "@/lib/llm/prompt";
 import { SCHEMA_VERSION } from "@/lib/schemas/change-brief";
+import { baselineCandidate } from "@/evals/gate";
 import { estimateCost, loadPricingSnapshot, priceFor } from "@/scripts/pricing";
 
 const DEFAULT_CONFIGS = ["gpt-6-luna:none", "gpt-6-luna:low", "gpt-5.4-mini:none"];
@@ -129,9 +130,14 @@ async function main(): Promise<number> {
   const stamp = meta.generated_at.replace(/[:.]/g, "-");
   writeFileSync(`evals/reports/${stamp}.md`, markdown);
   writeFileSync(`evals/reports/${stamp}.json`, JSON.stringify({ meta, configs: configs.map(configLabel), summaries, decision, records }, null, 2));
+  // CI eval gate input. Promoting it is a human step: review the report, then
+  // copy it to evals/baseline.json and commit it with the report.
+  const candidate = baselineCandidate(meta, `evals/reports/${stamp}.md`, configs, summaries, decision, calls);
+  if (candidate !== null) writeFileSync(`evals/reports/${stamp}.baseline.json`, `${JSON.stringify(candidate, null, 2)}\n`);
 
   console.log(`\n${markdown}`);
   console.log(`saved: evals/reports/${stamp}.md and .json`);
+  if (candidate !== null) console.log(`baseline candidate: evals/reports/${stamp}.baseline.json (copy to evals/baseline.json to promote)`);
   return summaries.some((s) => s.provider_errors > 0) ? 1 : 0;
 }
 

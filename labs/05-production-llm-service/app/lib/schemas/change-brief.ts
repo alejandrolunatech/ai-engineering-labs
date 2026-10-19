@@ -88,10 +88,19 @@ export const ChangeBriefSchema = z.strictObject({
 export type ModelBrief = z.infer<typeof ModelBriefSchema>;
 export type ChangeBrief = z.infer<typeof ChangeBriefSchema>;
 
-// POST /api/analyze success response from Phase 3.
+// Timing of THIS request (Phase 5). Kept outside the brief: it describes the
+// request that produced the brief, not the brief itself.
+export const RequestTimingSchema = z.strictObject({
+  total_ms: z.number().int().nonnegative(),
+  github_ms: z.number().int().nonnegative(),
+  llm_ms: z.number().int().nonnegative(),
+});
+
+// POST /api/analyze success response (Phase 3; timing added in Phase 5).
 export const BriefResponseSchema = z.strictObject({
   status: z.literal("brief"),
   brief: ChangeBriefSchema,
+  timing: RequestTimingSchema,
 });
 
 export type BriefResponse = z.infer<typeof BriefResponseSchema>;

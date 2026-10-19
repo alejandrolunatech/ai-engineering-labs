@@ -13,17 +13,25 @@ import type { NormalizedPullRequest } from "@/lib/schemas/normalized-pr";
 
 export type IngestFailureReason = GithubFailureReason | "malformed_response";
 
+// githubMs: the GitHub requests plus mapping their JSON. normalizationMs: the
+// evidence budget (lib/normalize/evidence.ts). Measured separately so telemetry
+// can say where the time went.
+export type IngestTimings = { githubMs: number; normalizationMs: number | null };
+
 export type IngestResult =
-  | { ok: true; evidence: NormalizedPullRequest; stats: GithubStats }
-  | { ok: false; kind: "not_found" | "unavailable"; reason: IngestFailureReason; stats: GithubStats };
+  | { ok: true; evidence: NormalizedPullRequest; stats: GithubStats; timings: IngestTimings }
+  | { ok: false; kind: "not_found" | "unavailable"; reason: IngestFailureReason; stats: GithubStats; timings: IngestTimings };
 
 export async function ingestPullRequest(pr: PullRequestRef): Promise<IngestResult> {
   const client = createGithubClient();
+  const started = performance.now();
+  const sinceStart = () => Math.round(performance.now() - started);
   const fail = (reason: IngestFailureReason): IngestResult => ({
     ok: false,
     kind: reason === "not_found" ? "not_found" : "unavailable",
     reason,
     stats: client.stats(),
+    timings: { githubMs: sinceStart(), normalizationMs: null },
   });
 
   const pullResponse = await client.getJson(pullUrl(pr));
@@ -38,5 +46,15 @@ export async function ingestPullRequest(pr: PullRequestRef): Promise<IngestResul
   const files = mapFiles(filesResponse.json);
   if (files === null) return fail("malformed_response");
 
-  return { ok: true, evidence: normalizeEvidence(pr, pull, files), stats: client.stats() };
+  const githubDone = performance.now();
+  const evidence = normalizeEvidence(pr, pull, files);
+  return {
+    ok: true,
+    evidence,
+    stats: client.stats(),
+    timings: {
+      githubMs: Math.round(githubDone - started),
+      normalizationMs: Math.round(performance.now() - githubDone),
+    },
+  };
 }

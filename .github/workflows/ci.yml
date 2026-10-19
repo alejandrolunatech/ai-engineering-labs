@@ -99,4 +99,9 @@ jobs:
       - run: npx next typegen
       - run: npm run typecheck
       - run: npm test
+      # Also inside npm test; its own step so a red gate is visible by name.
+      # No model calls: it checks that the shipped prompt, schema and eval set
+      # match evals/baseline.json, a recorded passing paid run.
+      - name: Eval gate (no model calls)
+        run: npm run eval-gate
       - run: npm run build

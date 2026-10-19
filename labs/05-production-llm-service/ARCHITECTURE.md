@@ -273,28 +273,45 @@ The experiment should measure whether caching materially improves latency/cost b
 
 ## Production telemetry event
 
-A safe structured event may include:
+Implemented in Phase 5 (`app/lib/telemetry.ts`, called once per request from `app/api/analyze/route.ts`). The Zod schema there is the allowlist: strict keys, and every string is an enum, a version or a model ID, so free text cannot be recorded. An event that fails it is replaced by `{"event":"telemetry_dropped"}`.
 
 ```json
 {
-  "event": "analysis_completed",
-  "status": "success",
+  "event": "analysis",
+  "outcome": "success",
+  "http_status": 200,
+  "failure_stage": null,
+  "reason": null,
   "provider": "openai",
-  "model": "<exact-id>",
-  "total_ms": 0,
-  "github_ms": 0,
-  "llm_ms": 0,
-  "input_tokens": null,
-  "output_tokens": null,
-  "usage_status": "unknown",
-  "estimated_cost": null,
-  "cost_status": "unknown",
-  "files_considered": 0,
-  "evidence_chars": 0,
+  "model": "gpt-6-luna",
+  "reasoning_effort": "none",
+  "schema_version": "0.2",
+  "prompt_version": "p4.0",
+  "total_ms": 5210,
+  "github_ms": 420,
+  "normalization_ms": 1,
+  "llm_ms": 4760,
+  "validation_ms": 2,
+  "github_requests": 2,
+  "github_redirects": 0,
+  "github_rate_limit_remaining": 4990,
+  "files_considered": 3,
+  "files_total": 3,
+  "evidence_chars": 9120,
   "truncated": false,
+  "input_tokens": 2483,
+  "cached_input_tokens": 0,
+  "output_tokens": 298,
+  "reasoning_tokens": 0,
+  "usage_status": "reported",
+  "estimated_cost_usd": 0.0003973,
+  "cost_status": "estimated",
+  "pricing_as_of": "2026-10-19",
   "schema_valid": true
 }
 ```
+
+(Illustrative values, not a measurement.) Failures carry `failure_stage` (`request`, `github`, `model`) and a fixed `reason` code. Unknown values are `null`, never `0`. A failed model call that reported usage is still counted and costed: it was paid for.
 
 Do not log:
 

@@ -34,6 +34,16 @@ op run --env-file=.env.local -- npm run evals -- --config gpt-6-luna:none --repe
 
 Cases and checks live in `evals/`; reports go to `evals/reports/` (git-ignored). `npm test` checks the eval harness itself and never calls a model.
 
+## CI eval gate and telemetry (Phase 5)
+
+```bash
+npm run eval-gate      # no model calls: prompt, schema and eval set must match evals/baseline.json
+```
+
+If you change the prompt, the output schema or the eval set, the gate fails. Run the paid evals, read the report, then copy the `evals/reports/<stamp>.baseline.json` it wrote to `evals/baseline.json` and commit it with the report. Never edit the fingerprints by hand.
+
+Every analysis writes one `"event":"analysis"` JSON line to stdout (see `lib/telemetry.ts` and RUNBOOK.md). Prices for the estimated cost are in `lib/pricing.ts`.
+
 ---
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).

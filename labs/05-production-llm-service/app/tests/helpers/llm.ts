@@ -35,6 +35,7 @@ export function fakeModel(result: Partial<Extract<ModelResult, { ok: true }>> | 
         model: "gpt-test-model",
         usage: FAKE_USAGE,
         llmMs: 5,
+        validationMs: 1,
         ...result,
       } as ModelResult;
     },
