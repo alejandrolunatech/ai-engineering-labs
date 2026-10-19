@@ -37,7 +37,10 @@ export type ModelResult =
       provider: string;
       model: string; // exact model ID the provider reports it served
       usage: ModelUsage;
+      // Provider round trip only. validationMs: parsing and schema-checking
+      // the reply in the adapter, after the round trip.
       llmMs: number;
+      validationMs: number;
     }
   | {
       ok: false;
@@ -49,6 +52,8 @@ export type ModelResult =
       model: string | null;
       usage: ModelUsage | null;
       llmMs: number;
+      // null when the call failed before there was a reply to validate.
+      validationMs: number | null;
     };
 
 export interface BriefModel {

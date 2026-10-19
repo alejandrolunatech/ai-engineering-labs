@@ -92,7 +92,7 @@ describe("POST /api/analyze — model failures map to safe categories", () => {
   it.each(["timeout", "auth", "rate_limited", "bad_request", "upstream_5xx", "network_error"] as const)(
     "provider failure (%s) -> 503 provider_unavailable",
     async (reason) => {
-      useModel(fakeModel({ ok: false, kind: "provider_unavailable", reason, model: null, usage: null, llmMs: 1 }));
+      useModel(fakeModel({ ok: false, kind: "provider_unavailable", reason, model: null, usage: null, llmMs: 1, validationMs: null }));
       await expectError(await analyze(), 503, "provider_unavailable");
     },
   );
@@ -100,7 +100,7 @@ describe("POST /api/analyze — model failures map to safe categories", () => {
   it.each(["incomplete_max_tokens", "refusal", "malformed_json", "schema_mismatch", "empty_output"] as const)(
     "invalid output (%s) -> 502 output_invalid",
     async (reason) => {
-      useModel(fakeModel({ ok: false, kind: "output_invalid", reason, model: "m", usage: null, llmMs: 1 }));
+      useModel(fakeModel({ ok: false, kind: "output_invalid", reason, model: "m", usage: null, llmMs: 1, validationMs: 0 }));
       await expectError(await analyze(), 502, "output_invalid");
     },
   );

@@ -143,6 +143,18 @@ Run after every production release:
 
 Do not use a giant or sensitive PR as the smoke fixture.
 
+## Telemetry events (Phase 5)
+
+Every `POST /api/analyze` writes exactly one JSON line to stdout with `"event":"analysis"` (Vercel: project, Logs, search `"event":"analysis"`; locally: the `npm run dev` terminal). The allowlist is `app/lib/telemetry.ts`; an event that does not fit it is replaced by `{"event":"telemetry_dropped"}`, which is itself worth investigating.
+
+Read an event like this:
+
+- `outcome` and `http_status`: what the user got. `failure_stage` (`request`, `github`, `model`) and `reason`: where and why it failed, as a fixed code.
+- `total_ms` = roughly `github_ms` + `normalization_ms` + `llm_ms` + `validation_ms` + request handling.
+- `input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_tokens`: provider-reported; `null` means not reported (`usage_status`).
+- `estimated_cost_usd` with `pricing_as_of`: an estimate from `app/lib/pricing.ts`, never billing truth. `null` with `cost_status: "unknown"` means it could not be estimated, not that it was free.
+- `rate_limited` from the model with `reason: "rate_limited"` can also mean the prepaid credit is used up. Check the OpenAI billing page before assuming load.
+
 ## Metrics to review
 
 At minimum:

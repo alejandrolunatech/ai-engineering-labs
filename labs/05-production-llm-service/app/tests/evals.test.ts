@@ -221,7 +221,7 @@ describe("eval runner", () => {
       },
     });
   }
-  const ok = (b: ModelBrief, model: string): ModelResult => ({ ok: true, brief: b, provider: "openai", model, usage: FAKE_USAGE, llmMs: 10 });
+  const ok = (b: ModelBrief, model: string): ModelResult => ({ ok: true, brief: b, provider: "openai", model, usage: FAKE_USAGE, llmMs: 10, validationMs: 1 });
 
   it("parses model:effort configs", () => {
     expect(parseConfig("gpt-6-luna")).toEqual({ model: "gpt-6-luna", effort: "none" });
@@ -267,8 +267,8 @@ describe("eval runner", () => {
       modelFor: (cfg) => ({
         async generateBrief() {
           return cfg === LUNA
-            ? { ok: false, kind: "output_invalid", reason: "schema_mismatch", model: "gpt-6-luna", usage: FAKE_USAGE, llmMs: 5 }
-            : { ok: false, kind: "provider_unavailable", reason: "rate_limited", model: null, usage: null, llmMs: 5 };
+            ? { ok: false, kind: "output_invalid", reason: "schema_mismatch", model: "gpt-6-luna", usage: FAKE_USAGE, llmMs: 5, validationMs: 1 }
+            : { ok: false, kind: "provider_unavailable", reason: "rate_limited", model: null, usage: null, llmMs: 5, validationMs: null };
         },
       }),
       costOf: () => null,

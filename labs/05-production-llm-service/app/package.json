@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "eval-gate": "vitest run tests/eval-gate.test.ts",
     "typecheck": "tsc --noEmit",
     "inspect-pr": "node --env-file-if-exists=.env.local --conditions=react-server --import ./scripts/alias-loader.mjs scripts/inspect-pr.ts",
     "brief-pr": "node --env-file-if-exists=.env.local --conditions=react-server --import ./scripts/alias-loader.mjs scripts/brief-pr.ts",

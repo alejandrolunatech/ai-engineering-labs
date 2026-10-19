@@ -263,13 +263,41 @@ Carried forward, not done here: prioritizing which 50 files are sent (skip vendo
 
 ## Phase 5 — Cost and latency
 
-What does one representative request cost?
+Built 2026-10-19. What changed:
 
-What is actually known vs estimated?
+- **Telemetry** (`app/lib/telemetry.ts`). One JSON line per request, success or failure: outcome, a fixed failure code, model, the five timings (`total_ms`, `github_ms`, `normalization_ms`, `llm_ms`, `validation_ms`), GitHub request count and rate-limit headroom, evidence size and truncation, provider-reported tokens, and the estimated cost. `[BOUNDARY]` The allowlist is a strict Zod schema whose string fields are all enums, versions or model IDs, so PR text, prompts, model output, headers, IPs and keys have nowhere to go. Leakage tests plant canary strings in the PR title, body, filename, patch, model output, API key, GitHub token, cookie and forwarded IP, then assert that none appears in any console output (`tests/analyze-telemetry.test.ts`).
+- **Pricing** (`app/lib/pricing.ts`). One dated table for the app, the scripts and the evals (it replaces `scripts/pricing-snapshot.json`). Prices re-checked against the OpenAI model pages on 2026-10-19; unchanged since 2026-10-08. A price applies only to its own model or a dated snapshot of it.
+- **Transparency panel**. After a brief, "How this brief was made" shows the model, model time, GitHub time, total time, tokens, the estimated cost with its pricing date, and whether the evidence was complete. Unknown shows as "unknown".
+- **CI eval gate** (`app/evals/gate.ts`, `app/evals/baseline.json`). CI fingerprints the prompt (instructions plus the exact input built for every eval case), the model-output JSON Schema and the eval-set source, and compares them with the recorded e3 baseline run. It also checks that the run picked the production config with no gate failures, no provider errors and at least 95% core checks. Change the prompt, the schema or the evals and CI goes red until a new paid run is committed. `npm run evals` now writes a `.baseline.json` candidate next to its report; promoting it is a human commit.
 
-Where is latency spent?
+Rules applied:
 
-Did token counts match my intuition?
+- Unknown is not zero. If input or output tokens are missing, the cost is unknown. If only the cached count is missing, every input token is priced at the full rate, which can only over-estimate.
+- An estimate is not a bill. The cost always travels with `is_estimate: true` and `pricing_as_of`.
+- A failed call that reported usage was still paid for, so telemetry still estimates its cost.
+- What the gate does not prove: today's model quality (only a paid run measures that), or which model Vercel actually runs (`OPENAI_MODEL` is outside CI; check it at G1).
+
+What does one representative request cost? From G0 (10 real PRs, 2026-10-13, gpt-6-luna, effort none): about 0.006 USD estimated for all 10, so roughly 0.0006 USD each, median model time 5.0 s. That is 10 requests on one day, not a distribution.
+
+What is actually known vs estimated? Known: provider-reported token counts and our own timings. Estimated: cost (from dated list prices). Unknown until the invoice: what OpenAI actually charges.
+
+Where is latency spent? Expected: almost all in `llm_ms`. To be measured on real requests with the new events.
+
+Did token counts match my intuition? To be filled in after the exercise below.
+
+### Exercise: verify one request's cost by hand
+
+1. Start the app with the key: `op run --env-file=.env.local -- npm run dev` (inside `app/`).
+2. Open http://localhost:3000 and explain one real public PR.
+3. Copy the `"event":"analysis"` line from the terminal.
+4. With the prices in `app/lib/pricing.ts` (USD per 1M tokens), compute:
+
+   `((input_tokens - cached_input_tokens) x input + cached_input_tokens x cached_input + output_tokens x output) / 1,000,000`
+
+   Reasoning tokens are already inside `output_tokens`; don't add them again.
+5. Compare with `estimated_cost_usd` in the event and the panel. Write the PR, the numbers and the result here.
+
+Result: _not yet run._
 
 ## Phase 6 — Production abuse/security
 

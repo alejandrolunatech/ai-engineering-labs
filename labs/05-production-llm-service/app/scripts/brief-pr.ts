@@ -8,7 +8,7 @@
 // flags to compare models on identical evidence.
 //
 // Prints status, latency, provider-reported tokens and an ESTIMATED cost from
-// scripts/pricing-snapshot.json. --show-brief prints the brief text; --save
+// lib/pricing.ts. --show-brief prints the brief text; --save
 // writes each result to .briefs/ (git-ignored) for side-by-side reading.
 // Never prints the API key.
 

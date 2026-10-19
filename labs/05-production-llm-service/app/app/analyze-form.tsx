@@ -103,7 +103,56 @@ function List({ title, items }: { title: string; items: readonly string[] }) {
 }
 
 function fmt(n: number | null): string {
-  return n === null ? "unknown" : String(n);
+  return n === null ? "unknown" : n.toLocaleString("en-US");
+}
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+// Phase 5 engineering transparency: what produced this brief, how long it took
+// and what it cost. Unknown values say "unknown", never 0. Cost is always
+// labelled as an estimate with the date of the prices it used.
+function EngineeringPanel({ result }: { result: BriefResponse }) {
+  const b = result.brief;
+  const t = result.timing;
+  const u = b.usage;
+  const rows: [string, string][] = [
+    ["Model", b.model],
+    ["Model time", seconds(t.llm_ms)],
+    ["GitHub time", seconds(t.github_ms)],
+    ["Total time", seconds(t.total_ms)],
+    [
+      "Tokens",
+      `${fmt(u?.input_tokens ?? null)} in (${fmt(u?.cached_input_tokens ?? null)} cached) · ${fmt(u?.output_tokens ?? null)} out (${fmt(u?.reasoning_tokens ?? null)} reasoning)`,
+    ],
+    [
+      "Estimated model cost",
+      b.estimated_cost === null
+        ? "unknown"
+        : `~$${b.estimated_cost.usd.toFixed(6)} (estimate from prices as of ${b.estimated_cost.pricing_as_of}, not a bill)`,
+    ],
+    [
+      "Evidence",
+      b.truncated
+        ? `partial: ${b.files_considered} of ${b.files_total} files, see the note above`
+        : `complete: ${b.files_considered} of ${b.files_total} files`,
+    ],
+    ["Versions", `schema ${b.schema_version} · prompt ${b.prompt_version}`],
+  ];
+  return (
+    <section className="flex flex-col gap-1 rounded-md border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-800">
+      <h3 className="font-medium">How this brief was made</h3>
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-zinc-600 dark:text-zinc-400">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-zinc-500">{label}</dt>
+            <dd className="font-mono">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
 }
 
 function BriefView({ result }: { result: BriefResponse }) {
@@ -149,11 +198,7 @@ function BriefView({ result }: { result: BriefResponse }) {
       <List title="Rollback" items={m.rollback_considerations} />
       <List title="Open questions" items={m.open_questions} />
       <List title="Limitations" items={m.limitations} />
-      <p className="font-mono text-xs text-zinc-500">
-        schema {b.schema_version} · prompt {b.prompt_version} · tokens in {fmt(b.usage?.input_tokens ?? null)} (cached{" "}
-        {fmt(b.usage?.cached_input_tokens ?? null)}) · out {fmt(b.usage?.output_tokens ?? null)} (reasoning{" "}
-        {fmt(b.usage?.reasoning_tokens ?? null)}) · cost {b.estimated_cost === null ? "unknown" : `~$${b.estimated_cost.usd}`}
-      </p>
+      <EngineeringPanel result={result} />
     </div>
   );
 }

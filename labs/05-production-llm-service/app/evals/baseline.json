@@ -1,0 +1,21 @@
+{
+  "eval_set_version": "e3",
+  "prompt_version": "p4.0",
+  "schema_version": "0.2",
+  "fingerprint": {
+    "prompt_sha256": "496ec322ecf56e4370bd8bec0075dc238a9ffb828de859bd9ed5bb84691490c2",
+    "schema_sha256": "6c60c1376fb22b65eb237cdfc218232e4fc8436abb643d0482b8b001eaeb81f9",
+    "eval_set_sha256": "013886fe1732e621c7a33de1eb5f97935dd788cf22d2449c1fd4eff6f846eeaa"
+  },
+  "production_config": "gpt-6-luna:none",
+  "run": {
+    "generated_at": "2026-10-12T11:42:26.040Z",
+    "report": "evals/BASELINE-e3.md",
+    "pick": "gpt-6-luna:none",
+    "calls": 72,
+    "core_pass_rate": 0.9705882352941176,
+    "gate_failures": 0,
+    "provider_errors": 0,
+    "invalid_outputs": 0
+  }
+}

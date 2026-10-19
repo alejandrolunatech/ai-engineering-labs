@@ -165,10 +165,13 @@ export function createOpenAIBriefModel(options: OpenAIBriefModelOptions): BriefM
           model: null,
           usage: null,
           llmMs: elapsed(),
+          validationMs: null,
         };
       }
 
       const llmMs = elapsed();
+      const validationStarted = performance.now();
+      const validationMs = () => Math.round(performance.now() - validationStarted);
       const r = (raw ?? {}) as ResponseView;
       const model = typeof r.model === "string" ? r.model : null;
       const usage = readUsage(r);
@@ -179,6 +182,7 @@ export function createOpenAIBriefModel(options: OpenAIBriefModelOptions): BriefM
         model,
         usage,
         llmMs,
+        validationMs: validationMs(),
       });
 
       if (r.status === "incomplete") {
@@ -203,6 +207,7 @@ export function createOpenAIBriefModel(options: OpenAIBriefModelOptions): BriefM
         model: model ?? options.model,
         usage: usage ?? { input_tokens: null, cached_input_tokens: null, output_tokens: null, reasoning_tokens: null },
         llmMs,
+        validationMs: validationMs(),
       };
     },
   };
