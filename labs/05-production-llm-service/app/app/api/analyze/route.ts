@@ -43,9 +43,10 @@ function isJsonContentType(header: string | null): boolean {
 
 type Stage = NonNullable<AnalysisEvent["failure_stage"]>;
 
-function newEvent(): AnalysisEvent {
+function newEvent(requestId: string): AnalysisEvent {
   return {
     event: "analysis",
+    request_id: requestId,
     outcome: "internal_error",
     http_status: 500,
     failure_stage: null,
@@ -79,10 +80,15 @@ function newEvent(): AnalysisEvent {
   };
 }
 
+// Worst case: 3 GitHub requests at 10 s each, one 30 s model call, plus
+// validation. Vercel stops the function after this many seconds.
+export const maxDuration = 75;
+
 export async function POST(request: Request): Promise<Response> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
-  const event = newEvent();
+  const requestId = crypto.randomUUID();
+  const event = newEvent(requestId);
 
   const fail = (
     category: ErrorCategory,
@@ -92,7 +98,7 @@ export async function POST(request: Request): Promise<Response> {
     headers?: HeadersInit,
   ): Response => {
     Object.assign(event, { outcome: category, http_status: httpStatus, failure_stage: stage, reason });
-    return errorResponse(category, httpStatus, headers);
+    return errorResponse(category, httpStatus, { ...headers, "X-Request-Id": requestId });
   };
 
   try {
@@ -239,7 +245,7 @@ export async function POST(request: Request): Promise<Response> {
       timing: { total_ms: elapsed(), github_ms: ingest.timings.githubMs, llm_ms: result.llmMs },
     };
     Object.assign(event, { outcome: "success", http_status: 200 });
-    return Response.json(response, { status: 200, headers: { "Cache-Control": "no-store" } });
+    return Response.json(response, { status: 200, headers: { "Cache-Control": "no-store", "X-Request-Id": requestId } });
   } catch {
     // Never echo or log the exception: it could contain request content.
     return fail("internal_error", 500, "request", "unexpected_exception");

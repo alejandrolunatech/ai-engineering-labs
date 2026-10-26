@@ -36,6 +36,9 @@ const BROWSER_FORM = join("app", "analyze-form.tsx");
 // The rate-limit store (Phase 6). Its target is the Upstash URL from server
 // configuration, never anything from the request.
 const RATE_LIMIT = join("lib", "rate-limit.ts");
+// The operator's smoke test (Phase 7). Not shipped in the app; it calls fixed
+// paths on the deployment URL the operator passes (scripts/smoke-lib.ts).
+const SMOKE = join("scripts", "smoke.ts");
 
 describe("source guards", () => {
   it("never uses dangerouslySetInnerHTML", () => {
@@ -43,14 +46,16 @@ describe("source guards", () => {
     expect(offenders.map((f) => relative(ROOT, f))).toEqual([]);
   });
 
-  it("calls fetch only from lib/github/client.ts and the rate-limit store", () => {
+  it("calls fetch only from lib/github/client.ts, the rate-limit store and the smoke script", () => {
     expect(shippedFiles.length).toBeGreaterThan(0);
     const callers = shippedFiles.filter((f) => NETWORK_CALL.test(readFileSync(f, "utf8")));
-    expect(callers.map((f) => relative(ROOT, f)).sort()).toEqual([BROWSER_FORM, GITHUB_CLIENT, RATE_LIMIT].sort());
+    expect(callers.map((f) => relative(ROOT, f)).sort()).toEqual([BROWSER_FORM, GITHUB_CLIENT, RATE_LIMIT, SMOKE].sort());
     const formCalls = readFileSync(join(ROOT, BROWSER_FORM), "utf8").match(/\bfetch\s*\([^,)]*/g);
     expect(formCalls).toEqual(['fetch("/api/analyze"']);
     const storeCalls = readFileSync(join(ROOT, RATE_LIMIT), "utf8").match(/\bfetch\s*\([^,]*/g);
     expect(storeCalls).toEqual(["fetch(endpoint"]);
+    const smokeCalls = readFileSync(join(ROOT, SMOKE), "utf8").match(/\bfetch\s*\([^,]*/g);
+    expect(smokeCalls).toEqual(["fetch(url"]);
   });
 
   it("reads the Upstash credentials only in config (presence) and the rate-limit store (value)", () => {

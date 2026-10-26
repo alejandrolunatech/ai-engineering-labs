@@ -340,15 +340,32 @@ What remains an honest limitation?
 
 ## Phase 7 — UX and operability
 
-How does the UI communicate uncertainty, truncation and failure?
+Built 2026-10-26. What changed:
 
-Can I diagnose a failure without reading sensitive raw content?
+- **Page**: a one-line promise, a labelled input with a clickable example PR, loading text with the expected wait (5 to 10 s, from G0's median model time), and a footer with how it works, what is kept (no PR, no brief; counts and timings; a hashed IP for up to a day) and a link to the source.
+- **Errors**: each server category maps to a fixed message and a next step (`app/analyze-form.tsx`). Rate limits and the kill switch use `Retry-After` to say when to come back. A response that is not our JSON (a paused project, a platform timeout) still gets a message. Nothing from the response body is shown except its category.
+- **Request reference**: a random UUID per request in `X-Request-Id`, in the telemetry event as `request_id`, and on screen as "Reference". Errors are `Cache-Control: no-store`.
+- **Readiness**: `/api/health` has `ready` (service on, model configured, store available). Still no external call.
+- **Time limit**: `maxDuration = 75` s on the analyze route, above the worst case of 3 x 10 s GitHub plus 30 s model.
+- **Smoke test**: `npm run smoke -- <url> [--analyze]` (`scripts/smoke.ts`). Free by default; `--analyze` makes one model call. Tested against the real handlers in `tests/operability.test.ts`, and run locally against `next start`: 8 of 8 checks passed.
+
+How does the UI communicate uncertainty, truncation and failure? An amber "AI-generated, may be wrong" banner on every brief; risk shown with its evidence and its uncertainty; a "Partial evidence: X of Y files" box with the server-written reasons when evidence was cut; empty sections say "Nothing supported by the evidence" rather than disappearing; each failure says what happened and what to do, with a reference.
+
+Can I diagnose a failure without reading sensitive raw content? Yes, by design: the reference leads to one telemetry line with the stage (`request`, `github`, `model`), a fixed reason code, timings, token counts and cost. It cannot show what the PR or the model said; for that, re-run the same public PR locally.
+
+Not done in Phase 7: a visual design pass, and any screen-reader test beyond labels, `aria-live` and `role="alert"`.
 
 ## Phase 8 — CI/CD
 
-What does CI prove?
+Prepared 2026-10-26; the Vercel side happens at G1.
 
-What does a preview/production deployment prove that CI does not?
+- CI (`.github/workflows/ci.yml`, job "Lab 05 — ChangeBrief app") installs from the lockfile, runs lint, `next typegen`, typecheck, all tests, the eval gate and the build, on every PR and on `main`. It never calls OpenAI, so it never spends money.
+- The paid eval run is a human step before production promotion: only when the prompt, schema, eval set or model changed. The CI gate goes red when the first three changed without a new recorded baseline; a model change shows at G1 in `/api/health`.
+- Vercel settings and the per-environment variables are in RUNBOOK.md "Vercel project"; the step-by-step setup is the G1 checklist.
+
+What does CI prove? That the code as committed builds, passes its checks with mocked GitHub, a fake model and a fake rate-limit store, and still matches the recorded eval baseline.
+
+What does a preview/production deployment prove that CI does not? To be answered at G1: the real environment variables, the Upstash store, Vercel's `x-real-ip`, the headers as a browser receives them, and real GitHub and OpenAI calls from Vercel's network.
 
 ## Phase 9 — Public release
 
