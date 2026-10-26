@@ -301,11 +301,42 @@ Result: _not yet run._
 
 ## Phase 6 — Production abuse/security
 
-What attacks or abuse cases did I test?
+Built 2026-10-26. What changed:
 
-Which control actually enforces the boundary?
+- **Kill switch** (`SERVICE_ENABLED`, `app/lib/config.ts`). `false` refuses every analysis with `503 service_disabled` before the body is read. Unset is enabled locally and **disabled on Vercel**, so a fresh deployment cannot spend until someone turns it on. An unclear value (`yes`, `1`) is a config error, not a guess. Procedure in RUNBOOK.md "Fast disable".
+- **Rate limits** (`app/lib/rate-limit.ts`). Fixed windows in Upstash Redis via its REST API (plain `fetch`, no new dependency): per client 10/hour and 30/day, and a service-wide 200/day. Checked after the request is validated and before GitHub. The global counter moves only when the client limit allowed the request. Off Vercel an in-memory store is used; on Vercel config refuses it, and a missing or failing store means 503 (fail closed).
+- **Security headers** (`app/next.config.ts`): CSP (`default-src 'self'`, `connect-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS, no `X-Powered-By`.
+- Health reports `service` and `rateLimit`; telemetry has five new fixed reasons (`service_disabled`, `rate_limited_ip`, `rate_limited_global`, `rate_limiter_unavailable`, `rate_limiter_not_configured`).
+
+Why Upstash and not Vercel's firewall rate limiting: the limit has to be testable in CI, configurable per environment, and has to sit between our own validation and the paid calls. Upstash is on the Vercel Marketplace (free tier, env vars injected into the project), speaks HTTP so it works from any function instance, and the code is about 60 lines we can read. Trust limit: it is a third party holding hashed client keys and counters for at most a day; its outage refuses analyses rather than letting them through.
+
+Daily money bound (an estimate, not a bill): the worst-case request is about 60,000 evidence characters plus instructions, at most ~70,000 input tokens (one token per character is the pessimistic bound), and 1,500 output tokens: 70,000 x 0.10 + 1,500 x 0.50 = ~7,750 per 1M, so ~0.008 USD. 200 per day x 0.008 = **~1.60 USD/day at the very worst**; at the G0 typical ~0.0006 USD it is ~0.12 USD/day. The OpenAI project's prepaid credit with auto-recharge off stays the final cap.
+
+What attacks or abuse cases did I test? (all mocked, `npm test`)
+
+| Case | Where |
+|---|---|
+| Prompt injection in PR content | `tests/openai-adapter.test.ts`, `tests/analyze-ingest.test.ts`, eval `prompt-injection` |
+| Lookalike / SSRF URLs | `tests/pr-url.test.ts`, `tests/analyze-route.test.ts`, redirects in `tests/analyze-ingest.test.ts` |
+| Oversized body and PR | `tests/analyze-route.test.ts` (2,048-byte body), `tests/normalize-evidence.test.ts`, `tests/analyze-ingest.test.ts` |
+| Rate-limit exhaustion (client, daily, global) | `tests/abuse-controls.test.ts` |
+| Rate-limit store missing, down, slow, malformed | `tests/abuse-controls.test.ts` |
+| Kill switch | `tests/abuse-controls.test.ts` |
+| Provider timeout / 429 / 5xx | `tests/openai-adapter.test.ts`, `tests/analyze-llm.test.ts` (no retries: `LLM_MAX_RETRIES = 0`) |
+| Telemetry leakage (PR text, output, keys, cookie, IP, store token) | `tests/analyze-telemetry.test.ts`, `tests/abuse-controls.test.ts` |
+| Script-like content | `tests/analyze-ingest.test.ts`, eval `script-html`, no `dangerouslySetInnerHTML` (`tests/source-guards.test.ts`) |
+
+Every refusal test asserts zero GitHub calls and zero model calls.
+
+Which control actually enforces the boundary? Code, never the prompt: the URL parser builds the GitHub endpoint; config decides the kill switch; the rate-limit module decides before `ingestPullRequest` runs; the provider credit caps the money. The prompt only reduces the chance of a bad brief.
 
 What remains an honest limitation?
+
+- An IP is not a person. Many IPs (botnets, IPv6 beyond one /64) each get their own allowance until the global cap stops everyone, which then refuses real users too. That is an availability risk, accepted for V1, not a spend risk.
+- Fixed windows allow a burst at a window edge (up to 2x the hourly limit across two minutes).
+- Turning the kill switch on Vercel takes a redeploy (about a minute). Pausing the project or revoking the OpenAI key is instant.
+- `script-src` keeps `'unsafe-inline'` (Next.js inline bootstrap without nonces); XSS defense rests on React escaping.
+- None of this is proven on Vercel yet: that is G1 (preview) and Phase 9.
 
 ## Phase 7 — UX and operability
 

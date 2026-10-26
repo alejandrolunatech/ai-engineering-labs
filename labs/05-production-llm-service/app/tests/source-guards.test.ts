@@ -33,6 +33,9 @@ const GITHUB_CLIENT = join("lib", "github", "client.ts");
 // The browser form posts to this app's own API route. It is the only other
 // fetch call, and its target is a fixed same-origin path.
 const BROWSER_FORM = join("app", "analyze-form.tsx");
+// The rate-limit store (Phase 6). Its target is the Upstash URL from server
+// configuration, never anything from the request.
+const RATE_LIMIT = join("lib", "rate-limit.ts");
 
 describe("source guards", () => {
   it("never uses dangerouslySetInnerHTML", () => {
@@ -40,12 +43,23 @@ describe("source guards", () => {
     expect(offenders.map((f) => relative(ROOT, f))).toEqual([]);
   });
 
-  it("calls fetch only from lib/github/client.ts", () => {
+  it("calls fetch only from lib/github/client.ts and the rate-limit store", () => {
     expect(shippedFiles.length).toBeGreaterThan(0);
     const callers = shippedFiles.filter((f) => NETWORK_CALL.test(readFileSync(f, "utf8")));
-    expect(callers.map((f) => relative(ROOT, f)).sort()).toEqual([BROWSER_FORM, GITHUB_CLIENT].sort());
+    expect(callers.map((f) => relative(ROOT, f)).sort()).toEqual([BROWSER_FORM, GITHUB_CLIENT, RATE_LIMIT].sort());
     const formCalls = readFileSync(join(ROOT, BROWSER_FORM), "utf8").match(/\bfetch\s*\([^,)]*/g);
     expect(formCalls).toEqual(['fetch("/api/analyze"']);
+    const storeCalls = readFileSync(join(ROOT, RATE_LIMIT), "utf8").match(/\bfetch\s*\([^,]*/g);
+    expect(storeCalls).toEqual(["fetch(endpoint"]);
+  });
+
+  it("reads the Upstash credentials only in config (presence) and the rate-limit store (value)", () => {
+    const readers = shippedFiles.filter((f) => /UPSTASH_REDIS_REST_TOKEN|KV_REST_API_TOKEN/.test(readFileSync(f, "utf8")));
+    expect(readers.map((f) => relative(ROOT, f)).sort()).toEqual([join("lib", "config.ts"), RATE_LIMIT].sort());
+  });
+
+  it("the rate-limit module is server-only", () => {
+    expect(readFileSync(join(ROOT, RATE_LIMIT), "utf8")).toMatch(/^import "server-only";/m);
   });
 
   it("reads GITHUB_TOKEN only in the client (value) and config (presence)", () => {

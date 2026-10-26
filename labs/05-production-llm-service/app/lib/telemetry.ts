@@ -29,6 +29,12 @@ export const REQUEST_REASONS = [
   "bad_request_shape",
   "bad_pr_url",
   "model_not_configured",
+  // Phase 6 abuse controls: all decided before any GitHub or model call.
+  "service_disabled",
+  "rate_limited_ip",
+  "rate_limited_global",
+  "rate_limiter_unavailable",
+  "rate_limiter_not_configured",
   "server_fields_invalid",
   "unexpected_exception",
 ] as const;

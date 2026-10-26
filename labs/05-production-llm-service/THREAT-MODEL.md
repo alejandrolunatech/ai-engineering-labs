@@ -79,6 +79,8 @@ Controls:
 
 Rate limiting reduces abuse; it does not establish user identity.
 
+Implemented (Phase 6): kill switch `SERVICE_ENABLED` (off by default on Vercel), per-client hourly and daily limits and a service-wide daily cap in Upstash Redis, all before any GitHub or model call, failing closed when the store is missing or down. The daily cap times the worst-case request cost bounds the app's own daily spend (LEARNING-NOTES Phase 6); the OpenAI project's prepaid credit with auto-recharge off remains the final boundary.
+
 ### 4. Secret exposure
 
 Risk: API key reaches browser, logs, source control, exception output, or model prompt.
@@ -186,6 +188,8 @@ Controls:
 - trust only deployment-provider-supplied client metadata;
 - document limits of anonymous identity;
 - global spend cap remains the final financial boundary.
+
+Implemented (Phase 6): on Vercel the client is `x-real-ip` (written by Vercel's edge), IPv6 grouped per /64, stored as a SHA-256 digest only. Off Vercel all requests share one local bucket. Residual risk: many IPs (botnets, IPv6 ranges beyond one /64) can each use their own allowance until the daily cap stops everyone. That is a denial of service for real users, not a spend risk, and it is accepted for V1.
 
 ### 13. Dependency / supply-chain compromise
 
