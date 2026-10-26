@@ -17,10 +17,13 @@ describe("GET /api/health", () => {
     const body = await res.json();
     expect(body).toEqual({
       status: "ok",
+      ready: false,
       config: "valid",
       schemaVersion: "0.2",
       githubAuth: "anonymous",
       llm: { status: "not_configured" },
+      service: "enabled",
+      rateLimit: { backend: "memory", perIpPerHour: 10, perIpPerDay: 30, globalPerDay: 200 },
     });
     expect(fetchSpy).not.toHaveBeenCalled();
   });

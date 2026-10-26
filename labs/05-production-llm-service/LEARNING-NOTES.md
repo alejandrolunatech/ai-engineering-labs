@@ -301,23 +301,71 @@ Result: _not yet run._
 
 ## Phase 6 — Production abuse/security
 
-What attacks or abuse cases did I test?
+Built 2026-10-26. What changed:
 
-Which control actually enforces the boundary?
+- **Kill switch** (`SERVICE_ENABLED`, `app/lib/config.ts`). `false` refuses every analysis with `503 service_disabled` before the body is read. Unset is enabled locally and **disabled on Vercel**, so a fresh deployment cannot spend until someone turns it on. An unclear value (`yes`, `1`) is a config error, not a guess. Procedure in RUNBOOK.md "Fast disable".
+- **Rate limits** (`app/lib/rate-limit.ts`). Fixed windows in Upstash Redis via its REST API (plain `fetch`, no new dependency): per client 10/hour and 30/day, and a service-wide 200/day. Checked after the request is validated and before GitHub. The global counter moves only when the client limit allowed the request. Off Vercel an in-memory store is used; on Vercel config refuses it, and a missing or failing store means 503 (fail closed).
+- **Security headers** (`app/next.config.ts`): CSP (`default-src 'self'`, `connect-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS, no `X-Powered-By`.
+- Health reports `service` and `rateLimit`; telemetry has five new fixed reasons (`service_disabled`, `rate_limited_ip`, `rate_limited_global`, `rate_limiter_unavailable`, `rate_limiter_not_configured`).
+
+Why Upstash and not Vercel's firewall rate limiting: the limit has to be testable in CI, configurable per environment, and has to sit between our own validation and the paid calls. Upstash is on the Vercel Marketplace (free tier, env vars injected into the project), speaks HTTP so it works from any function instance, and the code is about 60 lines we can read. Trust limit: it is a third party holding hashed client keys and counters for at most a day; its outage refuses analyses rather than letting them through.
+
+Daily money bound (an estimate, not a bill): the worst-case request is about 60,000 evidence characters plus instructions, at most ~70,000 input tokens (one token per character is the pessimistic bound), and 1,500 output tokens: 70,000 x 0.10 + 1,500 x 0.50 = ~7,750 per 1M, so ~0.008 USD. 200 per day x 0.008 = **~1.60 USD/day at the very worst**; at the G0 typical ~0.0006 USD it is ~0.12 USD/day. The OpenAI project's prepaid credit with auto-recharge off stays the final cap.
+
+What attacks or abuse cases did I test? (all mocked, `npm test`)
+
+| Case | Where |
+|---|---|
+| Prompt injection in PR content | `tests/openai-adapter.test.ts`, `tests/analyze-ingest.test.ts`, eval `prompt-injection` |
+| Lookalike / SSRF URLs | `tests/pr-url.test.ts`, `tests/analyze-route.test.ts`, redirects in `tests/analyze-ingest.test.ts` |
+| Oversized body and PR | `tests/analyze-route.test.ts` (2,048-byte body), `tests/normalize-evidence.test.ts`, `tests/analyze-ingest.test.ts` |
+| Rate-limit exhaustion (client, daily, global) | `tests/abuse-controls.test.ts` |
+| Rate-limit store missing, down, slow, malformed | `tests/abuse-controls.test.ts` |
+| Kill switch | `tests/abuse-controls.test.ts` |
+| Provider timeout / 429 / 5xx | `tests/openai-adapter.test.ts`, `tests/analyze-llm.test.ts` (no retries: `LLM_MAX_RETRIES = 0`) |
+| Telemetry leakage (PR text, output, keys, cookie, IP, store token) | `tests/analyze-telemetry.test.ts`, `tests/abuse-controls.test.ts` |
+| Script-like content | `tests/analyze-ingest.test.ts`, eval `script-html`, no `dangerouslySetInnerHTML` (`tests/source-guards.test.ts`) |
+
+Every refusal test asserts zero GitHub calls and zero model calls.
+
+Which control actually enforces the boundary? Code, never the prompt: the URL parser builds the GitHub endpoint; config decides the kill switch; the rate-limit module decides before `ingestPullRequest` runs; the provider credit caps the money. The prompt only reduces the chance of a bad brief.
 
 What remains an honest limitation?
 
+- An IP is not a person. Many IPs (botnets, IPv6 beyond one /64) each get their own allowance until the global cap stops everyone, which then refuses real users too. That is an availability risk, accepted for V1, not a spend risk.
+- Fixed windows allow a burst at a window edge (up to 2x the hourly limit across two minutes).
+- Turning the kill switch on Vercel takes a redeploy (about a minute). Pausing the project or revoking the OpenAI key is instant.
+- `script-src` keeps `'unsafe-inline'` (Next.js inline bootstrap without nonces); XSS defense rests on React escaping.
+- None of this is proven on Vercel yet: that is G1 (preview) and Phase 9.
+
 ## Phase 7 — UX and operability
 
-How does the UI communicate uncertainty, truncation and failure?
+Built 2026-10-26. What changed:
 
-Can I diagnose a failure without reading sensitive raw content?
+- **Page**: a one-line promise, a labelled input with a clickable example PR, loading text with the expected wait (5 to 10 s, from G0's median model time), and a footer with how it works, what is kept (no PR, no brief; counts and timings; a hashed IP for up to a day) and a link to the source.
+- **Errors**: each server category maps to a fixed message and a next step (`app/analyze-form.tsx`). Rate limits and the kill switch use `Retry-After` to say when to come back. A response that is not our JSON (a paused project, a platform timeout) still gets a message. Nothing from the response body is shown except its category.
+- **Request reference**: a random UUID per request in `X-Request-Id`, in the telemetry event as `request_id`, and on screen as "Reference". Errors are `Cache-Control: no-store`.
+- **Readiness**: `/api/health` has `ready` (service on, model configured, store available). Still no external call.
+- **Time limit**: `maxDuration = 75` s on the analyze route, above the worst case of 3 x 10 s GitHub plus 30 s model.
+- **Smoke test**: `npm run smoke -- <url> [--analyze]` (`scripts/smoke.ts`). Free by default; `--analyze` makes one model call. Tested against the real handlers in `tests/operability.test.ts`, and run locally against `next start`: 8 of 8 checks passed.
+
+How does the UI communicate uncertainty, truncation and failure? An amber "AI-generated, may be wrong" banner on every brief; risk shown with its evidence and its uncertainty; a "Partial evidence: X of Y files" box with the server-written reasons when evidence was cut; empty sections say "Nothing supported by the evidence" rather than disappearing; each failure says what happened and what to do, with a reference.
+
+Can I diagnose a failure without reading sensitive raw content? Yes, by design: the reference leads to one telemetry line with the stage (`request`, `github`, `model`), a fixed reason code, timings, token counts and cost. It cannot show what the PR or the model said; for that, re-run the same public PR locally.
+
+Not done in Phase 7: a visual design pass, and any screen-reader test beyond labels, `aria-live` and `role="alert"`.
 
 ## Phase 8 — CI/CD
 
-What does CI prove?
+Prepared 2026-10-26; the Vercel side happens at G1.
 
-What does a preview/production deployment prove that CI does not?
+- CI (`.github/workflows/ci.yml`, job "Lab 05 — ChangeBrief app") installs from the lockfile, runs lint, `next typegen`, typecheck, all tests, the eval gate and the build, on every PR and on `main`. It never calls OpenAI, so it never spends money.
+- The paid eval run is a human step before production promotion: only when the prompt, schema, eval set or model changed. The CI gate goes red when the first three changed without a new recorded baseline; a model change shows at G1 in `/api/health`.
+- Vercel settings and the per-environment variables are in RUNBOOK.md "Vercel project"; the step-by-step setup is the G1 checklist.
+
+What does CI prove? That the code as committed builds, passes its checks with mocked GitHub, a fake model and a fake rate-limit store, and still matches the recorded eval baseline.
+
+What does a preview/production deployment prove that CI does not? To be answered at G1: the real environment variables, the Upstash store, Vercel's `x-real-ip`, the headers as a browser receives them, and real GitHub and OpenAI calls from Vercel's network.
 
 ## Phase 9 — Public release
 

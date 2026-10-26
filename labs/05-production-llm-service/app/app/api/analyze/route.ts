@@ -6,6 +6,7 @@ import { getBriefModel } from "@/lib/llm";
 import { PROMPT_VERSION } from "@/lib/llm/prompt";
 import { parsePrUrl } from "@/lib/pr-url";
 import { estimateCost } from "@/lib/pricing";
+import { checkRateLimit, clientKey, storeFor } from "@/lib/rate-limit";
 import { AnalyzeRequestSchema } from "@/lib/schemas/analyze";
 import { ChangeBriefSchema, SCHEMA_VERSION, type BriefResponse } from "@/lib/schemas/change-brief";
 import {
@@ -20,9 +21,15 @@ import {
 // GitHub, then make ONE model call and return a validated ChangeBrief.
 //
 // Check order (each step is deterministic and runs before any later one):
-//   method -> content type -> capped body read -> JSON -> request shape -> PR URL
-//   -> model configured? -> GitHub ingestion -> one model call -> validation.
-// The GitHub and model calls are the only external calls. No retries.
+//   method -> kill switch -> content type -> capped body read -> JSON
+//   -> request shape -> PR URL -> model configured? -> rate limits
+//   -> GitHub ingestion -> one model call -> validation.
+// The GitHub and model calls are the paid external calls; the rate-limit store
+// is the only call before them. No retries.
+//
+// Phase 6: the kill switch and the rate limits sit in front of all paid work.
+// A refused request makes zero GitHub and zero model calls
+// (tests/abuse-controls.test.ts proves it for every refusal).
 //
 // Phase 5: every request, success or failure, writes exactly one telemetry
 // event (lib/telemetry.ts). The event holds counts, durations and fixed codes
@@ -36,9 +43,10 @@ function isJsonContentType(header: string | null): boolean {
 
 type Stage = NonNullable<AnalysisEvent["failure_stage"]>;
 
-function newEvent(): AnalysisEvent {
+function newEvent(requestId: string): AnalysisEvent {
   return {
     event: "analysis",
+    request_id: requestId,
     outcome: "internal_error",
     http_status: 500,
     failure_stage: null,
@@ -72,14 +80,25 @@ function newEvent(): AnalysisEvent {
   };
 }
 
+// Worst case: 3 GitHub requests at 10 s each, one 30 s model call, plus
+// validation. Vercel stops the function after this many seconds.
+export const maxDuration = 75;
+
 export async function POST(request: Request): Promise<Response> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
-  const event = newEvent();
+  const requestId = crypto.randomUUID();
+  const event = newEvent(requestId);
 
-  const fail = (category: ErrorCategory, httpStatus: number, stage: Stage, reason: FailureReason): Response => {
+  const fail = (
+    category: ErrorCategory,
+    httpStatus: number,
+    stage: Stage,
+    reason: FailureReason,
+    headers?: HeadersInit,
+  ): Response => {
     Object.assign(event, { outcome: category, http_status: httpStatus, failure_stage: stage, reason });
-    return errorResponse(category, httpStatus);
+    return errorResponse(category, httpStatus, { ...headers, "X-Request-Id": requestId });
   };
 
   try {
@@ -94,6 +113,11 @@ export async function POST(request: Request): Promise<Response> {
         model: config.llm.model,
         reasoning_effort: config.llm.reasoningEffort,
       });
+    }
+
+    // Kill switch: first, so a disabled service reads no body and calls nothing.
+    if (!config.serviceEnabled) {
+      return fail("service_disabled", 503, "request", "service_disabled", { "Retry-After": "300" });
     }
 
     if (!isJsonContentType(request.headers.get("content-type"))) {
@@ -128,6 +152,19 @@ export async function POST(request: Request): Promise<Response> {
     const model = getBriefModel(config.llm);
     if (model === null) {
       return fail("provider_unavailable", 503, "request", "model_not_configured");
+    }
+
+    // Rate limits: the last check before paid work, so malformed requests
+    // never touch the store. Any store problem is a refusal (fail closed).
+    const store = storeFor(config.rateLimit);
+    if (store === null) {
+      return fail("service_disabled", 503, "request", "rate_limiter_not_configured");
+    }
+    const limit = await checkRateLimit(clientKey(request.headers, config.onVercel), config.rateLimit.limits, store);
+    if (!limit.ok) {
+      return limit.reason === "rate_limiter_unavailable"
+        ? fail("service_disabled", 503, "request", limit.reason)
+        : fail("rate_limited", 429, "request", limit.reason, { "Retry-After": String(limit.retryAfterSec) });
     }
 
     const ingest = await ingestPullRequest(parsed.pr);
@@ -208,7 +245,7 @@ export async function POST(request: Request): Promise<Response> {
       timing: { total_ms: elapsed(), github_ms: ingest.timings.githubMs, llm_ms: result.llmMs },
     };
     Object.assign(event, { outcome: "success", http_status: 200 });
-    return Response.json(response, { status: 200, headers: { "Cache-Control": "no-store" } });
+    return Response.json(response, { status: 200, headers: { "Cache-Control": "no-store", "X-Request-Id": requestId } });
   } catch {
     // Never echo or log the exception: it could contain request content.
     return fail("internal_error", 500, "request", "unexpected_exception");

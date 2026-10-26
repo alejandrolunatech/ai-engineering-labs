@@ -29,6 +29,12 @@ export const REQUEST_REASONS = [
   "bad_request_shape",
   "bad_pr_url",
   "model_not_configured",
+  // Phase 6 abuse controls: all decided before any GitHub or model call.
+  "service_disabled",
+  "rate_limited_ip",
+  "rate_limited_global",
+  "rate_limiter_unavailable",
+  "rate_limiter_not_configured",
   "server_fields_invalid",
   "unexpected_exception",
 ] as const;
@@ -84,8 +90,14 @@ const ms = z.number().int().nonnegative().nullable();
 
 export const OUTCOMES = ["success", ...(Object.keys(ERROR_CATEGORIES) as (keyof typeof ERROR_CATEGORIES)[])] as const;
 
+// A random v4 UUID made by the server for each request (Phase 7). It is also
+// sent to the client as X-Request-Id, so a user can quote it and the operator
+// can find this event. It carries no information about the request.
+export const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 export const AnalysisEventSchema = z.strictObject({
   event: z.literal("analysis"),
+  request_id: z.string().regex(REQUEST_ID),
   outcome: z.enum(OUTCOMES),
   http_status: z.number().int().min(100).max(599),
   // Where the failure happened, then its code. Both null on success.

@@ -44,6 +44,12 @@ If you change the prompt, the output schema or the eval set, the gate fails. Run
 
 Every analysis writes one `"event":"analysis"` JSON line to stdout (see `lib/telemetry.ts` and RUNBOOK.md). Prices for the estimated cost are in `lib/pricing.ts`.
 
+## Kill switch and rate limits (Phase 6)
+
+- `SERVICE_ENABLED=false` refuses every analysis with 503 before any GitHub or model call. Unset means enabled locally and **disabled on Vercel**, so a new deployment spends nothing until you set it to `true`.
+- Rate limits run before any paid work: per client 10/hour and 30/day, and 200 analyses/day for the whole service (`RATE_LIMIT_PER_IP_PER_HOUR`, `RATE_LIMIT_PER_IP_PER_DAY`, `ANALYSIS_DAILY_CAP`). Locally they count in memory; on Vercel they need Upstash Redis (`KV_REST_API_URL`/`KV_REST_API_TOKEN` or the `UPSTASH_REDIS_REST_` pair) and fail closed without it.
+- `GET /api/health` shows `service` and `rateLimit`. Security headers (CSP and friends) are in `next.config.ts`.
+
 ---
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).

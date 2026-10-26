@@ -32,5 +32,6 @@ export function errorResponse(
     status: "error",
     error: { category, message: ERROR_CATEGORIES[category] },
   };
-  return Response.json(body, { status: httpStatus, headers });
+  // Errors are never cached: a refusal must not outlive its cause.
+  return Response.json(body, { status: httpStatus, headers: { "Cache-Control": "no-store", ...headers } });
 }

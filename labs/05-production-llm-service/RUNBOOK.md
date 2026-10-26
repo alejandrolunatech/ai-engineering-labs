@@ -29,36 +29,73 @@ A static homepage returning 200 does not prove the LLM path is healthy.
 
 ## Configuration
 
-Expected server-side configuration will include names like:
+Server-side only (never `NEXT_PUBLIC_`). Full notes in `app/.env.example`.
 
 ```text
-OPENAI_API_KEY
-OPENAI_MODEL
-SERVICE_ENABLED
-MODEL_INPUT_USD_PER_1M
-MODEL_CACHED_INPUT_USD_PER_1M
-MODEL_OUTPUT_USD_PER_1M
-MODEL_PRICING_AS_OF
-RATE_LIMIT_...
+OPENAI_API_KEY               secret, required for analysis
+OPENAI_MODEL                 gpt-6-luna
+OPENAI_REASONING_EFFORT      none (default)
+GITHUB_TOKEN                 optional, public-repo read-only
+SERVICE_ENABLED              true | false; unset = disabled on Vercel
+KV_REST_API_URL              Upstash Redis REST URL (or UPSTASH_REDIS_REST_URL)
+KV_REST_API_TOKEN            secret (or UPSTASH_REDIS_REST_TOKEN)
+RATE_LIMIT_PER_IP_PER_HOUR   default 10
+RATE_LIMIT_PER_IP_PER_DAY    default 30
+ANALYSIS_DAILY_CAP           default 200, whole service
 ```
 
-The final implementation decides exact names.
+Prices for the estimated cost are code (`app/lib/pricing.ts`), not configuration.
+
+### Vercel project (Phase 8, set up at G1)
+
+Project `changebrief` in team "alejandrolunatech's projects", Git-connected to this repository, Root Directory `labs/05-production-llm-service/app`, framework Next.js. Pushes to `main` deploy production; every other branch gets a preview behind Vercel Authentication. Builds come from the repository, never from local files.
+
+| Variable | Production | Preview | Secret |
+| --- | --- | --- | --- |
+| `OPENAI_API_KEY` | key of OpenAI project `changebrief-prod` (1Password `changebrief-prod`) | key `changebrief-vercel-preview` in project `changebrief-g0` (1Password `changebrief-preview`) | yes, Sensitive |
+| `OPENAI_MODEL` | `gpt-6-luna` | `gpt-6-luna` | no |
+| `SERVICE_ENABLED` | `true` only after G2 | `true` | no |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | added by the Upstash integration | same store | token yes |
+| `GITHUB_TOKEN` | optional, public read-only | optional | yes |
+
+Previews and production share one Upstash store; keys are the same shape, so preview traffic counts against the same daily cap. Accepted for V1 (previews are behind a login).
+
+`GET /api/health` reports `service` (kill switch), `rateLimit.backend` (`upstash`, `memory` or `not_configured`) and the limits. On Vercel, `not_configured` means every analysis is refused.
 
 Never paste production secret values into this runbook.
 
 ## Fast disable / kill switch
 
-Before launch, implement and test a server-side switch that makes analysis return a controlled `503 service temporarily disabled` without calling GitHub or OpenAI.
+Implemented in Phase 6. `SERVICE_ENABLED=false` makes `POST /api/analyze` return `503 service_disabled` (with `Retry-After: 300`) before it reads the body, so it makes zero GitHub and zero model calls (`app/tests/abuse-controls.test.ts`). Telemetry records `reason: "service_disabled"`.
 
-Target recovery procedure:
+On Vercel an environment variable change applies only to a new deployment. Three levels, fastest last:
 
-1. disable analysis;
-2. confirm new requests make zero model calls;
-3. investigate logs/provider status/spend;
-4. deploy/configure fix;
-5. run smoke test;
-6. re-enable;
+1. **Kill switch (normal):** Vercel, project, Settings, Environment Variables: set `SERVICE_ENABLED` to `false` for Production. Then Deployments, the current production deployment, `...`, Redeploy. Takes about a minute. The site stays up; analysis is refused.
+2. **Pause production:** in a terminal, anywhere: `vercel project pause <project-name>` (it asks you to type the name to confirm). The production deployment stops serving at once (visitors get a Vercel 503 page). Undo with `vercel project unpause <project-name>`.
+3. **Cut the money:** OpenAI platform, the production project, API keys: revoke the key. Model calls fail at once (`provider_unavailable`). Make a new key in 1Password afterwards.
+
+Recovery:
+
+1. disable analysis (level 1, or 2/3 if spend is running);
+2. check `/api/health` shows `"service":"disabled"` and new `"event":"analysis"` lines show `reason: "service_disabled"` with `github_ms: null`;
+3. investigate logs, provider status and spend;
+4. deploy/configure the fix;
+5. set `SERVICE_ENABLED=true`, redeploy;
+6. run the smoke test;
 7. monitor.
+
+## Rate limits
+
+Implemented in Phase 6 (`app/lib/rate-limit.ts`), checked after the request is validated and before any GitHub or model call:
+
+- per client: `RATE_LIMIT_PER_IP_PER_HOUR` and `RATE_LIMIT_PER_IP_PER_DAY` (fixed windows, UTC hours and days);
+- whole service: `ANALYSIS_DAILY_CAP` per UTC day. It only counts requests the client limit allowed.
+
+Refused requests get `429 rate_limited` with `Retry-After` and telemetry `reason` `rate_limited_ip` or `rate_limited_global`. If the store is down or slow (1 s timeout), analysis is refused with `503` and `reason: "rate_limiter_unavailable"`: it fails closed, never open.
+
+The client is the IP Vercel writes into `x-real-ip`, IPv6 per /64, stored only as a SHA-256 digest that expires within a day. An IP is not an identity. The daily cap and the OpenAI prepaid credit are the real money limits.
+
+To change a limit: set the variable in Vercel and redeploy. To let one person through after a false positive, wait for the window or delete their key in the Upstash console (keys start with `changebrief:rl:v1:`).
 
 ## Common incidents
 
@@ -76,7 +113,9 @@ Check:
 
 Immediate containment:
 
-- enable kill switch if spend risk is active;
+- enable kill switch if spend risk is active (see "Fast disable");
+- lower `ANALYSIS_DAILY_CAP` or the per-client limits and redeploy;
+- look for `reason: "rate_limited_global"` events: the daily cap is being hit;
 - lower/disable public traffic;
 - verify provider account/project spending controls.
 
@@ -120,7 +159,13 @@ Fail closed for the request. Capture only safe schema/error classification, not 
 
 ## Deployment rollback
 
-Before launch, document the exact Vercel rollback procedure actually available to the project.
+Vercel keeps every production deployment. To go back (Phase 8, not yet exercised on this project):
+
+1. Vercel, project `changebrief`, Deployments, filter Production.
+2. On the last good deployment: the menu, Instant Rollback (CLI, anywhere: `vercel rollback <deployment-url>`).
+3. Run the smoke test below.
+
+Each Vercel deployment keeps the environment variables it was built with. A rollback to a deployment built before the kill switch was turned off serves with the switch ON again: after a rollback during an incident, check `/api/health` for `"service"` and redeploy with `SERVICE_ENABLED=false` if needed.
 
 Rollback is not complete until:
 
@@ -131,17 +176,30 @@ Rollback is not complete until:
 
 ## Production smoke test
 
-Run after every production release:
+Run after every production release (inside `app/`, needs no secret):
 
-1. open production URL from a network/device outside local development;
-2. submit a known small public PR;
-3. verify structured brief renders;
-4. verify displayed model metadata is expected;
-5. inspect server telemetry for one request;
-6. confirm no raw PR/prompt/model content is present;
-7. record the deployment/request evidence in PRODUCTION-EVIDENCE.md when appropriate.
+```text
+npm run smoke -- https://changebrief.alejandrolunatech.com
+npm run smoke -- https://changebrief.alejandrolunatech.com --analyze
+```
+
+The first costs nothing: home page and security headers, `/api/health` (`ready`, service on, Upstash store, model), and one lookalike-host URL that must be refused with 400 before any GitHub or model call. `--analyze` also explains `nodejs/node#66442`: one model call (~0.0006 USD estimated) and one request off your hourly limit. It prints statuses, model, time, estimated cost and request references only. Previews behind Vercel Authentication answer 401; check those by hand.
+
+Then by hand, once per release:
+
+1. open the production URL from a phone on mobile data (outside your network);
+2. explain the same known small PR; the brief and "How this brief was made" render;
+3. find the request's `"event":"analysis"` line in Vercel Logs by its `request_id` (the "Reference" in the panel);
+4. confirm it holds no PR, prompt or model text;
+5. record the deployment and request evidence in PRODUCTION-EVIDENCE.md.
 
 Do not use a giant or sensitive PR as the smoke fixture.
+
+## Request references (Phase 7)
+
+Every `POST /api/analyze` response carries `X-Request-Id`, a random UUID. The page shows it as "Reference" on errors and in the transparency panel, and the telemetry event has the same value in `request_id`. When someone reports a problem, ask for the reference and search Vercel Logs for it. It identifies one request and nothing else.
+
+`GET /api/health` also reports `ready`: true only when the service is on, a model is configured and a rate-limit store is available. It makes no external call, so `ready: true` does not prove GitHub, OpenAI or Upstash are up; the smoke test with `--analyze` does.
 
 ## Telemetry events (Phase 5)
 
